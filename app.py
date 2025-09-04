@@ -150,10 +150,18 @@ def index():
         )
 
     # Format totals for display
-    total_purchase_usd_str = format_currency_filter(total_purchase_value_usd, Currency.USD)
-    total_purchase_inr_str = format_currency_filter(total_purchase_value_inr, Currency.INR)
-    total_current_usd_str = format_currency_filter(total_current_value_usd, Currency.USD)
-    total_current_inr_str = format_currency_filter(total_current_value_inr, Currency.INR)
+    total_purchase_usd_str = format_currency_filter(
+        total_purchase_value_usd, Currency.USD
+    )
+    total_purchase_inr_str = format_currency_filter(
+        total_purchase_value_inr, Currency.INR
+    )
+    total_current_usd_str = format_currency_filter(
+        total_current_value_usd, Currency.USD
+    )
+    total_current_inr_str = format_currency_filter(
+        total_current_value_inr, Currency.INR
+    )
 
     return render_template(
         "index.html",
@@ -298,7 +306,9 @@ def add_transaction(investment_name=None):
         )
         save_transactions_to_json(TRANSACTIONS_FILE, transactions_data)
         flash(f"Transaction added for {investment_name_from_form}!", "success")
-        return redirect(url_for("view_transactions", investment_name=investment_name_from_form))
+        return redirect(
+            url_for("view_transactions", investment_name=investment_name_from_form)
+        )
 
     title = "Add Transaction"
     if investment_name:
@@ -350,7 +360,9 @@ def edit_transaction(investment_name, transaction_index):
 
         save_transactions_to_json(TRANSACTIONS_FILE, transactions_data)
         flash(f"Transaction updated for {new_investment_name}!", "success")
-        return redirect(url_for("view_transactions", investment_name=new_investment_name))
+        return redirect(
+            url_for("view_transactions", investment_name=new_investment_name)
+        )
 
     # Pre-populate form for GET request
     form.process(data=transaction_to_edit.__dict__)

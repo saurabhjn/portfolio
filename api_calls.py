@@ -79,9 +79,7 @@ def get_current_rate(ticker: str) -> Optional[Decimal]:
             print(f"Cache hit for {ticker}. Returning cached rate.")
             return cached_rate
 
-    print(
-        f"Cache miss or stale for {ticker}. Fetching from source."
-    )
+    print(f"Cache miss or stale for {ticker}. Fetching from source.")
     rate = None
 
     if ticker.startswith("IN"):  # For Indian Mutual Funds (ISINs)

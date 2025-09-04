@@ -29,6 +29,7 @@ class Investment:
 @dataclass
 class Transaction:
     """A data class representing a financial transaction for an investment."""
+
     buy_date: Optional[datetime.date] = None
     buy_quantity: Optional[Decimal] = None
     buy_rate: Optional[Decimal] = None
@@ -125,9 +126,13 @@ def load_transactions_from_json(filepath: str) -> Dict[str, List[Transaction]]:
                         else None
                     ),
                     buy_quantity=(
-                        Decimal(item["buy_quantity"]) if item.get("buy_quantity") else None
+                        Decimal(item["buy_quantity"])
+                        if item.get("buy_quantity")
+                        else None
                     ),
-                    buy_rate=Decimal(item["buy_rate"]) if item.get("buy_rate") else None,
+                    buy_rate=(
+                        Decimal(item["buy_rate"]) if item.get("buy_rate") else None
+                    ),
                     description=item.get("description"),
                     sell_date=(
                         datetime.date.fromisoformat(item["sell_date"])
@@ -182,7 +187,10 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
             total_buy_quantity += tx.buy_quantity
             total_buy_amount += tx.buy_quantity * tx.buy_rate
 
-    return {"total_buy_quantity": total_buy_quantity, "total_buy_amount": total_buy_amount}
+    return {
+        "total_buy_quantity": total_buy_quantity,
+        "total_buy_amount": total_buy_amount,
+    }
 
 
 def calculate_xirr(
@@ -209,23 +217,30 @@ def calculate_xirr(
             cash_flows.append((tx.sell_date, tx.sell_quantity * tx.sell_rate))
             total_sell_quantity += tx.sell_quantity
 
-        # Appreciation gain is treated as a reinvestment/capital contribution.
-        # This is a negative cash flow, increasing the cost basis for the
-        # purpose of the XIRR calculation.
         if tx.gain_date and tx.gain_amount is not None:
             cash_flows.append((tx.gain_date, tx.gain_amount))
 
     # Add current market value of remaining holdings as the final positive cash flow
     remaining_quantity = total_buy_quantity - total_sell_quantity
-    if remaining_quantity > 0 and current_rate is not None:
-        cash_flows.append((current_date, remaining_quantity * current_rate))
+    if remaining_quantity > 0:
+        if current_rate is not None:
+            # Use market rate if available
+            current_value = remaining_quantity * current_rate
+            cash_flows.append((current_date, current_value))
+        else:
+            # For investments without a ticker, calculate value based on cost basis
+            total_cost_basis = Decimal(0)
+            for tx in transactions:
+                if tx.buy_quantity is not None and tx.buy_rate is not None:
+                    total_cost_basis += tx.buy_quantity * tx.buy_rate
+
+            cash_flows.append((current_date, total_cost_basis))
 
     if len(cash_flows) < 2:
         return None
 
     # Sort by date and separate into two lists for the xirr function
     cash_flows.sort(key=lambda item: item[0])
-    print(cash_flows, flush=True)
     dates, values = zip(*cash_flows)
 
     # XIRR requires at least one positive and one negative cash flow

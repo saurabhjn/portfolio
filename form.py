@@ -12,9 +12,7 @@ class InvestmentForm(FlaskForm):
     investment_name = StringField(
         "Investment Name", validators=[DataRequired(), Length(min=2, max=100)]
     )
-    ticker = StringField(
-        "Ticker Symbol", validators=[Optional(), Length(max=50)]
-    )
+    ticker = StringField("Ticker Symbol", validators=[Optional(), Length(max=50)])
     five_year_annualised_return = DecimalField(
         "5-Year Annualised Return (%)", validators=[Optional()], places=2
     )
@@ -60,28 +58,52 @@ class TransactionForm(FlaskForm):
             return False
 
         buy_fields = [self.buy_date.data, self.buy_quantity.data, self.buy_rate.data]
-        sell_fields = [self.sell_date.data, self.sell_quantity.data, self.sell_rate.data]
+        sell_fields = [
+            self.sell_date.data,
+            self.sell_quantity.data,
+            self.sell_rate.data,
+        ]
         gain_fields = [self.gain_date.data, self.gain_amount.data]
 
-        is_buy_partial = any(f is not None for f in buy_fields) and not all(f is not None for f in buy_fields)
-        is_sell_partial = any(f is not None for f in sell_fields) and not all(f is not None for f in sell_fields)
-        is_gain_partial = any(f is not None for f in gain_fields) and not all(f is not None for f in gain_fields)
+        is_buy_partial = any(f is not None for f in buy_fields) and not all(
+            f is not None for f in buy_fields
+        )
+        is_sell_partial = any(f is not None for f in sell_fields) and not all(
+            f is not None for f in sell_fields
+        )
+        is_gain_partial = any(f is not None for f in gain_fields) and not all(
+            f is not None for f in gain_fields
+        )
 
         has_error = False
         if is_buy_partial:
-            self.buy_date.errors.append("All 'Buy' fields (Date, Quantity, Rate) must be filled together.")
+            self.buy_date.errors.append(
+                "All 'Buy' fields (Date, Quantity, Rate) must be filled together."
+            )
             has_error = True
         if is_sell_partial:
-            self.sell_date.errors.append("All 'Sell' fields (Date, Quantity, Rate) must be filled together.")
+            self.sell_date.errors.append(
+                "All 'Sell' fields (Date, Quantity, Rate) must be filled together."
+            )
             has_error = True
         if is_gain_partial:
-            self.gain_date.errors.append("Both 'Gain' fields (Date, Amount) must be filled together.")
+            self.gain_date.errors.append(
+                "Both 'Gain' fields (Date, Amount) must be filled together."
+            )
             has_error = True
 
-        is_any_complete = any([all(f is not None for f in buy_fields), all(f is not None for f in sell_fields), all(f is not None for f in gain_fields)])
+        is_any_complete = any(
+            [
+                all(f is not None for f in buy_fields),
+                all(f is not None for f in sell_fields),
+                all(f is not None for f in gain_fields),
+            ]
+        )
 
         if not is_any_complete and not has_error:
-            self.submit.errors.append("A transaction requires at least one complete group: Buy, Sell, or Gain.")
+            self.submit.errors.append(
+                "A transaction requires at least one complete group: Buy, Sell, or Gain."
+            )
             has_error = True
 
         return not has_error
