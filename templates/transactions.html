@@ -25,12 +25,12 @@
                 {% for tx in transactions %}
                 <tr>
                     <td>{{ tx.buy_date.strftime('%Y-%m-%d') }}</td>
-                    <td class="text-end">{{ tx.buy_quantity | int }}</td>
+                    <td class="text-end">{{ tx.buy_quantity | format_quantity }}</td>
                     <td class="text-end">
                         {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.buy_rate | format_currency(investment.currency) }}
                     </td>
                     <td>{{ tx.sell_date.strftime('%Y-%m-%d') if tx.sell_date else '-' }}</td>
-                    <td class="text-end">{{ tx.sell_quantity | int if tx.sell_quantity is not none else '-' }}</td>
+                    <td class="text-end">{{ tx.sell_quantity | format_quantity if tx.sell_quantity is not none else '-' }}</td>
                     <td class="text-end">
                         {% if tx.sell_rate is not none %}
                             {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.sell_rate | format_currency(investment.currency) }}
@@ -59,7 +59,7 @@
                 <tr class="table-group-divider">
                     <td><strong>Totals</strong></td>
                     <td class="text-end">
-                        <strong>{{ total_buy_quantity | int }}</strong>
+                        <strong>{{ total_buy_quantity | format_quantity }}</strong>
                     </td>
                     <td class="text-end">
                         <strong>

@@ -10,13 +10,18 @@
         <table class="table table-striped table-hover">
             <thead class="table-dark">
                 <tr>
-                    <th rowspan="2" class="align-middle">Investment Name</th>
                     <th rowspan="2" class="align-middle">Ticker</th>
-                    <th colspan="2" class="text-center">Value</th>
+                    <th rowspan="2" class="align-middle">Investment Name</th>
+                    <th rowspan="2" class="align-middle">Quantity</th>
+                    <th rowspan="2" class="align-middle">Current Rate</th>
+                    <th colspan="2" class="text-center">Purchase Value</th>
+                    <th colspan="2" class="text-center">Current Value</th>
                     <th colspan="2" class="text-center">Returns</th>
                     <th rowspan="2" class="align-middle">Actions</th>
                 </tr>
                 <tr>
+                    <th>USD</th>
+                    <th>INR</th>
                     <th>USD</th>
                     <th>INR</th>
                     <th>5-Year</th>
@@ -26,16 +31,48 @@
             <tbody>
                 {% for item in portfolio_data %}
                 <tr>
+                    <td>{{ item.investment.ticker }}</td>
                     <td>
                         <a href="{{ url_for('view_transactions', investment_name=item.investment.investment_name) }}">{{ item.investment.investment_name }}</a>
                     </td>
-                    <td>{{ item.investment.ticker }}</td>
+                    <td class="text-end">{{ item.total_quantity | format_quantity }}</td>
+                    <td class="text-end">
+                        {% if item.current_rate is not none %}
+                            {% if item.investment.currency.value == 'USD' %}${% elif item.investment.currency.value == 'INR' %}₹{% endif %}{{ item.current_rate | format_currency(item.investment.currency) }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    {# Purchase Value Columns #}
                     {% if item.investment.currency.value == 'USD' %}
-                        <td class="text-end">${{ item.total_value | format_currency(item.investment.currency) }}</td>
+                        <td class="text-end">${{ item.purchase_value | format_currency(item.investment.currency) }}</td>
                         <td class="text-end">-</td>
                     {% elif item.investment.currency.value == 'INR' %}
                         <td class="text-end">-</td>
-                        <td class="text-end">₹{{ item.total_value | format_currency(item.investment.currency) }}</td>
+                        <td class="text-end">₹{{ item.purchase_value | format_currency(item.investment.currency) }}</td>
+                    {% else %}
+                        <td class="text-end">-</td>
+                        <td class="text-end">-</td>
+                    {% endif %}
+                    {# Current Value Columns #}
+                    {% if item.investment.currency.value == 'USD' %}
+                        <td class="text-end">
+                            {% if item.current_value is not none %}
+                                ${{ item.current_value | format_currency(item.investment.currency) }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td class="text-end">-</td>
+                    {% elif item.investment.currency.value == 'INR' %}
+                        <td class="text-end">-</td>
+                        <td class="text-end">
+                            {% if item.current_value is not none %}
+                                ₹{{ item.current_value | format_currency(item.investment.currency) }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
                     {% else %}
                         <td class="text-end">-</td>
                         <td class="text-end">-</td>
