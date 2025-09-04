@@ -91,20 +91,12 @@ ALPHA_VANTAGE_API_KEY = load_api_key(CONFIG_FILE)
 rate_cache = load_rate_cache(RATE_CACHE_FILE)
 
 
+
 def get_current_rate(ticker: str) -> Optional[Decimal]:
     """
-    Fetches the latest closing price for a given ticker from Alpha Vantage,
-    with a 10-minute cache.
+    Fetches the latest price for a given ticker from various sources,
+    with a 30-minute cache.
     """
-    if not ALPHA_VANTAGE_API_KEY:
-        print(f"API key is not configured. Skipping API call for {ticker}.")
-        return None
-
-    # Skip API calls for ticker formats not supported by Alpha Vantage
-    if ticker.startswith("NSE:") or ticker.startswith("MUTF_IN:"):
-        print(f"Skipping API call for unsupported ticker format: {ticker}")
-        return None
-
     now = datetime.datetime.now()
 
     # Check cache first
@@ -114,62 +106,73 @@ def get_current_rate(ticker: str) -> Optional[Decimal]:
             print(f"Cache hit for {ticker}. Returning cached rate.")
             return cached_rate
 
-    print(f"Cache miss for {ticker}. Fetching from API.")
-    params = {
-        "function": "TIME_SERIES_INTRADAY",
-        "symbol": ticker,
-        "interval": "5min",
-        "apikey": ALPHA_VANTAGE_API_KEY,
-    }
-    try:
-        response = requests.get(
-            "https://www.alphavantage.co/query", params=params, timeout=10
-        )
-        response.raise_for_status()  # Raise an exception for bad status codes
-        data = response.json()
+    print(f"Cache miss for {ticker}. Fetching from source.")
+    rate = None
 
-        # The API can return a "Note" on high frequency usage, which we treat as an error.
-        if "Error Message" in data or "Note" in data:
-            print(
-                f"API Error for {ticker}: {data.get('Error Message') or data.get('Note')}"
+    if ticker.startswith("IN"):  # For Indian Mutual Funds (ISINs)
+        try:
+            url = f"https://mf.captnemo.in/nav/{ticker}"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            nav_str = data.get("nav")
+            if nav_str is not None:
+                rate = Decimal(str(nav_str))
+                print(f"captnemo.in success for {ticker}: rate {rate}")
+        except Exception as e:
+            print(f"captnemo.in failed for {ticker}: {e}")
+            rate = None
+
+    else:  # Fallback to Alpha Vantage for other tickers
+        if not ALPHA_VANTAGE_API_KEY:
+            print(f"API key is not configured. Skipping API call for {ticker}.")
+            return None
+
+        params = {
+            "function": "TIME_SERIES_INTRADAY",
+            "symbol": ticker,
+            "interval": "5min",
+            "apikey": ALPHA_VANTAGE_API_KEY,
+        }
+        try:
+            response = requests.get(
+                "https://www.alphavantage.co/query", params=params, timeout=10
             )
-            return None
+            response.raise_for_status()
+            data = response.json()
 
-        meta_data = data.get("Meta Data")
-        time_series = data.get("Time Series (5min)")
+            if "Error Message" in data or "Note" in data:
+                print(
+                    f"API Error for {ticker}: {data.get('Error Message') or data.get('Note')}"
+                )
+                return None
 
-        if not meta_data or not time_series:
-            print(f"Incomplete data for {ticker}: {data}")
-            return None
+            meta_data = data.get("Meta Data")
+            time_series = data.get("Time Series (5min)")
 
-        last_refreshed_key = meta_data.get("3. Last Refreshed")
-        if not last_refreshed_key:
-            print(f"No 'Last Refreshed' key for {ticker}")
-            return None
+            if not meta_data or not time_series:
+                return None
 
-        latest_data = time_series.get(last_refreshed_key)
-        if not latest_data:
-            print(f"No data for timestamp {last_refreshed_key} for {ticker}")
-            return None
+            last_refreshed_key = meta_data.get("3. Last Refreshed")
+            latest_data = time_series.get(last_refreshed_key)
+            close_price_str = latest_data.get("4. close") if latest_data else None
 
-        close_price_str = latest_data.get("4. close")
-        if not close_price_str:
-            print(f"No 'close' price for timestamp {last_refreshed_key} for {ticker}")
-            return None
+            if close_price_str:
+                rate = Decimal(close_price_str)
 
-        rate = Decimal(close_price_str)
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed for {ticker}: {e}")
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"Failed to parse data for {ticker}: {e}")
+
+    # Update cache only if we got a valid rate
+    if rate is not None:
         # Store the newly fetched rate in the cache
         rate_cache[ticker] = (now, rate)
         save_rate_cache(RATE_CACHE_FILE, rate_cache)
 
-        return rate
+    return rate
 
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed for {ticker}: {e}")
-        return None
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        print(f"Failed to parse data for {ticker}: {e}")
-        return None
 
 def _format_inr(number_str: str) -> str:
     """
