@@ -1,0 +1,15 @@
+{
+    "Google Equity Grant": [
+        {
+            "investment_name": "Google Equity Grant",
+            "buy_date": "2024-03-15",
+            "buy_quantity": "430.023",
+            "buy_rate": "142.17",
+            "description": "Equity Grant",
+            "sell_date": null,
+            "sell_quantity": null,
+            "sell_rate": null,
+            "gain_from_sale": null
+        }
+    ]
+}

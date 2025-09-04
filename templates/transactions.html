@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Transactions for {{ investment_name }}</h1>
+        <a href="{{ url_for('add_transaction', investment_name=investment_name) }}" class="btn btn-primary">Add Transaction</a>
+    </div>
+
+    {% if transactions %}
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>Buy Date</th>
+                    <th>Buy Qty</th>
+                    <th>Buy Rate</th>
+                    <th>Sell Date</th>
+                    <th>Sell Qty</th>
+                    <th>Sell Rate</th>
+                    <th>Gain</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tx in transactions %}
+                <tr>
+                    <td>{{ tx.buy_date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ tx.buy_quantity }}</td>
+                    <td>{{ tx.buy_rate }}</td>
+                    <td>{{ tx.sell_date.strftime('%Y-%m-%d') if tx.sell_date else '-' }}</td>
+                    <td>{{ tx.sell_quantity if tx.sell_quantity is not none else '-' }}</td>
+                    <td>{{ tx.sell_rate if tx.sell_rate is not none else '-' }}</td>
+                    <td>{{ tx.gain_from_sale if tx.gain_from_sale is not none else '-' }}</td>
+                    <td>{{ tx.description if tx.description else '-' }}</td>
+                    <td>
+                        <a href="{{ url_for('edit_transaction', investment_name=investment_name, transaction_index=loop.index0) }}" class="btn btn-sm btn-outline-secondary me-2">Edit</a>
+                        <form action="{{ url_for('delete_transaction', investment_name=investment_name, transaction_index=loop.index0) }}" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this transaction?');">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            No transactions found for {{ investment_name }}. <a href="{{ url_for('add_transaction', investment_name=investment_name) }}" class="alert-link">Add one now!</a>
+        </div>
+    {% endif %}
+{% endblock %}
