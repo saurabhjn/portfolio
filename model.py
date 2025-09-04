@@ -5,6 +5,7 @@ from enum import Enum
 from decimal import Decimal
 from typing import List, Dict, Optional
 import datetime
+from pyxirr import xirr
 
 
 class Currency(Enum):
@@ -166,3 +167,55 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
         total_buy_amount += tx.buy_quantity * tx.buy_rate
 
     return {"total_buy_quantity": total_buy_quantity, "total_buy_amount": total_buy_amount}
+
+
+def calculate_xirr(
+    transactions: List[Transaction],
+    current_rate: Optional[Decimal],
+    current_date: datetime.date,
+) -> Optional[Decimal]:
+    """Calculates the XIRR for a series of transactions as a percentage."""
+    if not transactions:
+        return None
+
+    cash_flows = []
+    total_buy_quantity = Decimal(0)
+    total_sell_quantity = Decimal(0)
+
+    for tx in transactions:
+        # Buy is a negative cash flow (money out)
+        cash_flows.append((tx.buy_date, -(tx.buy_quantity * tx.buy_rate)))
+        total_buy_quantity += tx.buy_quantity
+
+        # Sell is a positive cash flow (money in)
+        if tx.sell_date and tx.sell_quantity is not None and tx.sell_rate is not None:
+            cash_flows.append((tx.sell_date, tx.sell_quantity * tx.sell_rate))
+            total_sell_quantity += tx.sell_quantity
+
+    # Add current market value of remaining holdings as the final positive cash flow
+    remaining_quantity = total_buy_quantity - total_sell_quantity
+    if remaining_quantity > 0 and current_rate is not None:
+        cash_flows.append((current_date, remaining_quantity * current_rate))
+
+    if len(cash_flows) < 2:
+        return None
+
+    # Sort by date and separate into two lists for the xirr function
+    cash_flows.sort(key=lambda item: item[0])
+    dates, values = zip(*cash_flows)
+
+    # XIRR requires at least one positive and one negative cash flow
+    if not (any(v > 0 for v in values) and any(v < 0 for v in values)):
+        return None
+
+    try:
+        # Calculate XIRR; py_xirr returns a float
+        result = xirr(dates, values)
+
+        # The library can return NaN or infinity on calculation errors
+        if result is None or abs(result) == float("inf") or result != result:
+            return None
+
+        return Decimal(result) * 100  # Return as a percentage
+    except (ValueError, TypeError, ZeroDivisionError):
+        return None

@@ -67,7 +67,13 @@
                         </strong>
                     </td>
                     {# Empty cells to span the rest of the columns #}
-                    <td colspan="6"></td>
+                    <td colspan="6">
+                        {% if xirr_value is not none %}
+                            <strong class="ms-4">
+                                XIRR: {{ "%.2f"|format(xirr_value) }}%
+                            </strong>
+                        {% endif %}
+                    </td>
                 </tr>
             </tfoot>
         </table>

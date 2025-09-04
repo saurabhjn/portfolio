@@ -16,6 +16,7 @@ from model import (
     load_transactions_from_json,
     save_transactions_to_json,
     calculate_transaction_totals,
+    calculate_xirr,
 )
 from form import InvestmentForm, TransactionForm
 
@@ -253,6 +254,11 @@ def index():
             total_quantity * current_rate if current_rate is not None else None
         )
 
+        # Calculate XIRR for the investment
+        xirr_value = calculate_xirr(
+            transactions_for_inv, current_rate, datetime.date.today()
+        )
+
         portfolio_data.append(
             {
                 "investment": inv,
@@ -260,6 +266,7 @@ def index():
                 "current_rate": current_rate,
                 "purchase_value": purchase_value,
                 "current_value": current_value,
+                "xirr_value": xirr_value,
             }
         )
 
@@ -342,13 +349,20 @@ def view_transactions(investment_name):
 
     transactions_for_investment = transactions_data.get(investment_name, [])
 
-    # Calculate totals using the new model function
+    # Calculate summary totals
     totals = calculate_transaction_totals(transactions_for_investment)
+
+    # Calculate XIRR
+    current_rate = get_current_rate(investment.ticker)
+    xirr_value = calculate_xirr(
+        transactions_for_investment, current_rate, datetime.date.today()
+    )
 
     return render_template(
         "transactions.html",
         investment=investment,
         transactions=transactions_for_investment,
+        xirr_value=xirr_value,
         **totals,
     )
 
