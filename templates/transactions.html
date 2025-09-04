@@ -16,7 +16,9 @@
                     <th>Sell Date</th>
                     <th>Sell Qty</th>
                     <th>Sell Rate</th>
-                    <th>Gain</th>
+                    <th>Gain from Sale</th>
+                    <th>Gain Date</th>
+                    <th>Gain Amount</th>
                     <th>Description</th>
                     <th>Actions</th>
                 </tr>
@@ -24,10 +26,14 @@
             <tbody>
                 {% for tx in transactions %}
                 <tr>
-                    <td>{{ tx.buy_date.strftime('%Y-%m-%d') }}</td>
-                    <td class="text-end">{{ tx.buy_quantity | format_quantity }}</td>
+                    <td>{{ tx.buy_date.strftime('%Y-%m-%d') if tx.buy_date else '-' }}</td>
+                    <td class="text-end">{{ tx.buy_quantity | format_quantity if tx.buy_quantity is not none else '-' }}</td>
                     <td class="text-end">
-                        {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.buy_rate | format_currency(investment.currency) }}
+                        {% if tx.buy_rate is not none %}
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.buy_rate | format_currency(investment.currency) }}
+                        {% else %}
+                            -
+                        {% endif %}
                     </td>
                     <td>{{ tx.sell_date.strftime('%Y-%m-%d') if tx.sell_date else '-' }}</td>
                     <td class="text-end">{{ tx.sell_quantity | format_quantity if tx.sell_quantity is not none else '-' }}</td>
@@ -41,6 +47,14 @@
                     <td class="text-end">
                         {% if tx.gain_from_sale is not none %}
                             {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.gain_from_sale | format_currency(investment.currency) }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>{{ tx.gain_date.strftime('%Y-%m-%d') if tx.gain_date else '-' }}</td>
+                    <td class="text-end">
+                        {% if tx.gain_amount is not none %}
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.gain_amount | format_currency(investment.currency) }}
                         {% else %}
                             -
                         {% endif %}
@@ -67,7 +81,7 @@
                         </strong>
                     </td>
                     {# Empty cells to span the rest of the columns #}
-                    <td colspan="6">
+                    <td colspan="8">
                         {% if xirr_value is not none %}
                             <strong class="ms-4">
                                 XIRR: {{ "%.2f"|format(xirr_value) }}%

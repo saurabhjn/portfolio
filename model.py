@@ -29,16 +29,16 @@ class Investment:
 @dataclass
 class Transaction:
     """A data class representing a financial transaction for an investment."""
-
-    investment_name: str  # Link to the Investment object by name
-    buy_date: datetime.date
-    buy_quantity: Decimal
-    buy_rate: Decimal
+    buy_date: Optional[datetime.date] = None
+    buy_quantity: Optional[Decimal] = None
+    buy_rate: Optional[Decimal] = None
     description: Optional[str] = None
     sell_date: Optional[datetime.date] = None
     sell_quantity: Optional[Decimal] = None
     sell_rate: Optional[Decimal] = None
     gain_from_sale: Optional[Decimal] = None
+    gain_date: Optional[datetime.date] = None
+    gain_amount: Optional[Decimal] = None
 
 
 class _InvestmentJSONEncoder(json.JSONEncoder):
@@ -119,10 +119,15 @@ def load_transactions_from_json(filepath: str) -> Dict[str, List[Transaction]]:
         for inv_name, transactions_list_data in data.items():
             transactions_data[inv_name] = [
                 Transaction(
-                    investment_name=item["investment_name"],
-                    buy_date=datetime.date.fromisoformat(item["buy_date"]),
-                    buy_quantity=Decimal(item["buy_quantity"]),
-                    buy_rate=Decimal(item["buy_rate"]),
+                    buy_date=(
+                        datetime.date.fromisoformat(item["buy_date"])
+                        if item.get("buy_date")
+                        else None
+                    ),
+                    buy_quantity=(
+                        Decimal(item["buy_quantity"]) if item.get("buy_quantity") else None
+                    ),
+                    buy_rate=Decimal(item["buy_rate"]) if item.get("buy_rate") else None,
                     description=item.get("description"),
                     sell_date=(
                         datetime.date.fromisoformat(item["sell_date"])
@@ -144,6 +149,16 @@ def load_transactions_from_json(filepath: str) -> Dict[str, List[Transaction]]:
                         if item.get("gain_from_sale") is not None
                         else None
                     ),
+                    gain_date=(
+                        datetime.date.fromisoformat(item["gain_date"])
+                        if item.get("gain_date")
+                        else None
+                    ),
+                    gain_amount=(
+                        Decimal(item["gain_amount"])
+                        if item.get("gain_amount") is not None
+                        else None
+                    ),
                 )
                 for item in transactions_list_data
             ]
@@ -163,8 +178,9 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
     total_buy_amount = Decimal(0)
 
     for tx in transactions:
-        total_buy_quantity += tx.buy_quantity
-        total_buy_amount += tx.buy_quantity * tx.buy_rate
+        if tx.buy_quantity is not None and tx.buy_rate is not None:
+            total_buy_quantity += tx.buy_quantity
+            total_buy_amount += tx.buy_quantity * tx.buy_rate
 
     return {"total_buy_quantity": total_buy_quantity, "total_buy_amount": total_buy_amount}
 
@@ -183,14 +199,21 @@ def calculate_xirr(
     total_sell_quantity = Decimal(0)
 
     for tx in transactions:
-        # Buy is a negative cash flow (money out)
-        cash_flows.append((tx.buy_date, -(tx.buy_quantity * tx.buy_rate)))
-        total_buy_quantity += tx.buy_quantity
+        # Buy is a negative cash flow (money out) and increases quantity
+        if tx.buy_date and tx.buy_quantity is not None and tx.buy_rate is not None:
+            cash_flows.append((tx.buy_date, -(tx.buy_quantity * tx.buy_rate)))
+            total_buy_quantity += tx.buy_quantity
 
-        # Sell is a positive cash flow (money in)
+        # Sell is a positive cash flow (money in) and decreases quantity
         if tx.sell_date and tx.sell_quantity is not None and tx.sell_rate is not None:
             cash_flows.append((tx.sell_date, tx.sell_quantity * tx.sell_rate))
             total_sell_quantity += tx.sell_quantity
+
+        # Appreciation gain is treated as a reinvestment/capital contribution.
+        # This is a negative cash flow, increasing the cost basis for the
+        # purpose of the XIRR calculation.
+        if tx.gain_date and tx.gain_amount is not None:
+            cash_flows.append((tx.gain_date, tx.gain_amount))
 
     # Add current market value of remaining holdings as the final positive cash flow
     remaining_quantity = total_buy_quantity - total_sell_quantity
@@ -202,6 +225,7 @@ def calculate_xirr(
 
     # Sort by date and separate into two lists for the xirr function
     cash_flows.sort(key=lambda item: item[0])
+    print(cash_flows, flush=True)
     dates, values = zip(*cash_flows)
 
     # XIRR requires at least one positive and one negative cash flow

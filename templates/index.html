@@ -105,6 +105,25 @@
                 </tr>
                 {% endfor %}
             </tbody>
+            <tfoot>
+                <tr class="table-group-divider">
+                    <td colspan="4"><strong>Totals</strong></td>
+                    <td class="text-end">
+                        <strong>${{ total_purchase_usd_str }}</strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>₹{{ total_purchase_inr_str }}</strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>${{ total_current_usd_str }}</strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>₹{{ total_current_inr_str }}</strong>
+                    </td>
+                    {# Empty cells to span the rest of the columns #}
+                    <td colspan="4"></td>
+                </tr>
+            </tfoot>
         </table>
     {% else %}
         <div class="alert alert-info" role="alert">

@@ -106,6 +106,11 @@ def format_quantity_filter(value):
 def index():
     """Renders the main page with a list of all investments."""
     portfolio_data = []
+    total_purchase_value_usd = Decimal(0)
+    total_purchase_value_inr = Decimal(0)
+    total_current_value_usd = Decimal(0)
+    total_current_value_inr = Decimal(0)
+
     for inv in investments:
         transactions_for_inv = transactions_data.get(inv.investment_name, [])
         totals = calculate_transaction_totals(transactions_for_inv)
@@ -117,6 +122,16 @@ def index():
         current_value = (
             total_quantity * current_rate if current_rate is not None else None
         )
+
+        # Accumulate totals based on currency
+        if inv.currency == Currency.USD:
+            total_purchase_value_usd += purchase_value
+            if current_value is not None:
+                total_current_value_usd += current_value
+        elif inv.currency == Currency.INR:
+            total_purchase_value_inr += purchase_value
+            if current_value is not None:
+                total_current_value_inr += current_value
 
         # Calculate XIRR for the investment
         xirr_value = calculate_xirr(
@@ -134,7 +149,20 @@ def index():
             }
         )
 
-    return render_template("index.html", portfolio_data=portfolio_data)
+    # Format totals for display
+    total_purchase_usd_str = format_currency_filter(total_purchase_value_usd, Currency.USD)
+    total_purchase_inr_str = format_currency_filter(total_purchase_value_inr, Currency.INR)
+    total_current_usd_str = format_currency_filter(total_current_value_usd, Currency.USD)
+    total_current_inr_str = format_currency_filter(total_current_value_inr, Currency.INR)
+
+    return render_template(
+        "index.html",
+        portfolio_data=portfolio_data,
+        total_purchase_usd_str=total_purchase_usd_str,
+        total_purchase_inr_str=total_purchase_inr_str,
+        total_current_usd_str=total_current_usd_str,
+        total_current_inr_str=total_current_inr_str,
+    )
 
 
 @app.route("/add", methods=["GET", "POST"])
@@ -251,8 +279,8 @@ def add_transaction(investment_name=None):
         form.investment_name.data = investment_name
 
     if form.validate_on_submit():
+        investment_name_from_form = form.investment_name.data
         new_transaction = Transaction(
-            investment_name=form.investment_name.data,
             buy_date=form.buy_date.data,
             buy_quantity=form.buy_quantity.data,
             buy_rate=form.buy_rate.data,
@@ -261,18 +289,16 @@ def add_transaction(investment_name=None):
             sell_quantity=form.sell_quantity.data,
             sell_rate=form.sell_rate.data,
             gain_from_sale=form.gain_from_sale.data,
+            gain_date=form.gain_date.data,
+            gain_amount=form.gain_amount.data,
         )
         # Add transaction to the correct list in the dictionary
-        transactions_data.setdefault(new_transaction.investment_name, []).append(
+        transactions_data.setdefault(investment_name_from_form, []).append(
             new_transaction
         )
         save_transactions_to_json(TRANSACTIONS_FILE, transactions_data)
-        flash(f"Transaction added for {new_transaction.investment_name}!", "success")
-        return redirect(
-            url_for(
-                "view_transactions", investment_name=new_transaction.investment_name
-            )
-        )
+        flash(f"Transaction added for {investment_name_from_form}!", "success")
+        return redirect(url_for("view_transactions", investment_name=investment_name_from_form))
 
     title = "Add Transaction"
     if investment_name:
@@ -299,8 +325,9 @@ def edit_transaction(investment_name, transaction_index):
     ]
 
     if form.validate_on_submit():
-        # Update the transaction object
-        transaction_to_edit.investment_name = form.investment_name.data
+        new_investment_name = form.investment_name.data
+
+        # Update the transaction object's data
         transaction_to_edit.buy_date = form.buy_date.data
         transaction_to_edit.buy_quantity = form.buy_quantity.data
         transaction_to_edit.buy_rate = form.buy_rate.data
@@ -309,20 +336,25 @@ def edit_transaction(investment_name, transaction_index):
         transaction_to_edit.sell_quantity = form.sell_quantity.data
         transaction_to_edit.sell_rate = form.sell_rate.data
         transaction_to_edit.gain_from_sale = form.gain_from_sale.data
+        transaction_to_edit.gain_date = form.gain_date.data
+        transaction_to_edit.gain_amount = form.gain_amount.data
+
+        # If the investment was changed, move the transaction to the new list
+        if new_investment_name != investment_name:
+            # Remove from the old investment's transaction list
+            transactions_data[investment_name].pop(transaction_index)
+            # Add to the new investment's transaction list
+            transactions_data.setdefault(new_investment_name, []).append(
+                transaction_to_edit
+            )
 
         save_transactions_to_json(TRANSACTIONS_FILE, transactions_data)
-        flash(
-            f"Transaction updated for {transaction_to_edit.investment_name}!", "success"
-        )
-        return redirect(
-            url_for(
-                "view_transactions", investment_name=transaction_to_edit.investment_name
-            )
-        )
+        flash(f"Transaction updated for {new_investment_name}!", "success")
+        return redirect(url_for("view_transactions", investment_name=new_investment_name))
 
     # Pre-populate form for GET request
     form.process(data=transaction_to_edit.__dict__)
-    form.investment_name.data = transaction_to_edit.investment_name  # Set dropdown
+    form.investment_name.data = investment_name  # Set dropdown to original investment
 
     return render_template(
         "form_page.html", form=form, title=f"Edit Transaction for {investment_name}"
@@ -340,9 +372,9 @@ def delete_transaction(investment_name, transaction_index):
         flash("Transaction not found.", "danger")
         return redirect(url_for("view_transactions", investment_name=investment_name))
 
-    deleted_transaction = transactions_for_investment.pop(transaction_index)
+    transactions_for_investment.pop(transaction_index)
     save_transactions_to_json(TRANSACTIONS_FILE, transactions_data)
-    flash(f"Transaction for {deleted_transaction.investment_name} deleted!", "info")
+    flash(f"Transaction for {investment_name} deleted!", "info")
     return redirect(url_for("view_transactions", investment_name=investment_name))
 
 

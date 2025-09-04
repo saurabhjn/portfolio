@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, DecimalField, SelectField, SubmitField, TextAreaField
-from wtforms.validators import DataRequired, Length, Optional
+from wtforms.validators import DataRequired, Length, Optional, ValidationError
 from wtforms.fields.datetime import DateField
 
 from model import Currency
@@ -37,13 +37,51 @@ class TransactionForm(FlaskForm):
     buy_date = DateField(
         "Buy Date",
         format="%Y-%m-%d",  # Expected date format
-        validators=[DataRequired()],
+        validators=[Optional()],
     )
-    buy_quantity = DecimalField("Buy Quantity", validators=[DataRequired()], places=2)
-    buy_rate = DecimalField("Buy Rate", validators=[DataRequired()], places=2)
+    buy_quantity = DecimalField("Buy Quantity", validators=[Optional()], places=2)
+    buy_rate = DecimalField("Buy Rate", validators=[Optional()], places=2)
     description = StringField("Description", validators=[Optional(), Length(max=200)])
     sell_date = DateField("Sell Date", format="%Y-%m-%d", validators=[Optional()])
     sell_quantity = DecimalField("Sell Quantity", validators=[Optional()], places=2)
     sell_rate = DecimalField("Sell Rate", validators=[Optional()], places=2)
     gain_from_sale = DecimalField("Gain from Sale", validators=[Optional()], places=2)
+    gain_date = DateField("Gain Date", format="%Y-%m-%d", validators=[Optional()])
+    gain_amount = DecimalField("Gain Amount", validators=[Optional()], places=2)
     submit = SubmitField("Save Transaction")
+
+    def validate(self, extra_validators=None):
+        """
+        Custom validation to ensure that at least one complete group of fields
+        (buy, sell, or gain) is provided, and no group is partial.
+        """
+        # Run parent validation first
+        if not super().validate(extra_validators):
+            return False
+
+        buy_fields = [self.buy_date.data, self.buy_quantity.data, self.buy_rate.data]
+        sell_fields = [self.sell_date.data, self.sell_quantity.data, self.sell_rate.data]
+        gain_fields = [self.gain_date.data, self.gain_amount.data]
+
+        is_buy_partial = any(f is not None for f in buy_fields) and not all(f is not None for f in buy_fields)
+        is_sell_partial = any(f is not None for f in sell_fields) and not all(f is not None for f in sell_fields)
+        is_gain_partial = any(f is not None for f in gain_fields) and not all(f is not None for f in gain_fields)
+
+        has_error = False
+        if is_buy_partial:
+            self.buy_date.errors.append("All 'Buy' fields (Date, Quantity, Rate) must be filled together.")
+            has_error = True
+        if is_sell_partial:
+            self.sell_date.errors.append("All 'Sell' fields (Date, Quantity, Rate) must be filled together.")
+            has_error = True
+        if is_gain_partial:
+            self.gain_date.errors.append("Both 'Gain' fields (Date, Amount) must be filled together.")
+            has_error = True
+
+        is_any_complete = any([all(f is not None for f in buy_fields), all(f is not None for f in sell_fields), all(f is not None for f in gain_fields)])
+
+        if not is_any_complete and not has_error:
+            self.submit.errors.append("A transaction requires at least one complete group: Buy, Sell, or Gain.")
+            has_error = True
+
+        return not has_error
