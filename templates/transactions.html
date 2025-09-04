@@ -2,8 +2,8 @@
 
 {% block content %}
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>Transactions for {{ investment_name }}</h1>
-        <a href="{{ url_for('add_transaction', investment_name=investment_name) }}" class="btn btn-primary">Add Transaction</a>
+        <h1>Transactions for {{ investment.investment_name }}</h1>
+        <a href="{{ url_for('add_transaction', investment_name=investment.investment_name) }}" class="btn btn-primary">Add Transaction</a>
     </div>
 
     {% if transactions %}
@@ -25,16 +25,30 @@
                 {% for tx in transactions %}
                 <tr>
                     <td>{{ tx.buy_date.strftime('%Y-%m-%d') }}</td>
-                    <td>{{ tx.buy_quantity }}</td>
-                    <td>{{ tx.buy_rate }}</td>
+                    <td class="text-end">{{ tx.buy_quantity | int }}</td>
+                    <td class="text-end">
+                        {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.buy_rate | money_floor }}
+                    </td>
                     <td>{{ tx.sell_date.strftime('%Y-%m-%d') if tx.sell_date else '-' }}</td>
-                    <td>{{ tx.sell_quantity if tx.sell_quantity is not none else '-' }}</td>
-                    <td>{{ tx.sell_rate if tx.sell_rate is not none else '-' }}</td>
-                    <td>{{ tx.gain_from_sale if tx.gain_from_sale is not none else '-' }}</td>
+                    <td class="text-end">{{ tx.sell_quantity | int if tx.sell_quantity is not none else '-' }}</td>
+                    <td class="text-end">
+                        {% if tx.sell_rate is not none %}
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.sell_rate | money_floor }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if tx.gain_from_sale is not none %}
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.gain_from_sale | money_floor }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                     <td>{{ tx.description if tx.description else '-' }}</td>
                     <td>
-                        <a href="{{ url_for('edit_transaction', investment_name=investment_name, transaction_index=loop.index0) }}" class="btn btn-sm btn-outline-secondary me-2">Edit</a>
-                        <form action="{{ url_for('delete_transaction', investment_name=investment_name, transaction_index=loop.index0) }}" method="POST" class="d-inline">
+                        <a href="{{ url_for('edit_transaction', investment_name=investment.investment_name, transaction_index=loop.index0) }}" class="btn btn-sm btn-outline-secondary me-2">Edit</a>
+                        <form action="{{ url_for('delete_transaction', investment_name=investment.investment_name, transaction_index=loop.index0) }}" method="POST" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this transaction?');">Delete</button>
                         </form>
                     </td>
@@ -44,7 +58,7 @@
         </table>
     {% else %}
         <div class="alert alert-info" role="alert">
-            No transactions found for {{ investment_name }}. <a href="{{ url_for('add_transaction', investment_name=investment_name) }}" class="alert-link">Add one now!</a>
+            No transactions found for {{ investment.investment_name }}. <a href="{{ url_for('add_transaction', investment_name=investment.investment_name) }}" class="alert-link">Add one now!</a>
         </div>
     {% endif %}
 {% endblock %}

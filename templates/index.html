@@ -25,8 +25,8 @@
                         <a href="{{ url_for('view_transactions', investment_name=inv.investment_name) }}">{{ inv.investment_name }}</a>
                     </td>
                     <td>{{ inv.ticker }}</td>
-                    <td>{{ inv.five_year_annualised_return }}%</td>
-                    <td>{{ inv.ten_year_annualised_return }}%</td>
+                    <td class="text-end">{{ inv.five_year_annualised_return }}%</td>
+                    <td class="text-end">{{ inv.ten_year_annualised_return }}%</td>
                     <td>{{ inv.currency.value }}</td>
                     <td>
                         <a href="{{ url_for('edit_investment', investment_index=loop.index0) }}" class="btn btn-sm btn-outline-secondary me-2">Edit</a>

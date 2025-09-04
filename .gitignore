@@ -75,3 +75,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# User-generated data
+data/
