@@ -6,33 +6,56 @@
         <a href="{{ url_for('add_investment') }}" class="btn btn-primary">Add Investment</a>
     </div>
 
-    {% if investments %}
+    {% if portfolio_data %}
         <table class="table table-striped table-hover">
             <thead class="table-dark">
                 <tr>
-                    <th>Investment Name</th>
-                    <th>Ticker</th>
-                    <th>5-Year Return</th>
-                    <th>10-Year Return</th>
-                    <th>Currency</th>
-                    <th>Actions</th>
+                    <th rowspan="2" class="align-middle">Investment Name</th>
+                    <th rowspan="2" class="align-middle">Ticker</th>
+                    <th colspan="2" class="text-center">Value</th>
+                    <th colspan="2" class="text-center">Returns</th>
+                    <th rowspan="2" class="align-middle">Actions</th>
+                </tr>
+                <tr>
+                    <th>USD</th>
+                    <th>INR</th>
+                    <th>5-Year</th>
+                    <th>10-Year</th>
                 </tr>
             </thead>
             <tbody>
-                {% for inv in investments %}
+                {% for item in portfolio_data %}
                 <tr>
                     <td>
-                        <a href="{{ url_for('view_transactions', investment_name=inv.investment_name) }}">{{ inv.investment_name }}</a>
+                        <a href="{{ url_for('view_transactions', investment_name=item.investment.investment_name) }}">{{ item.investment.investment_name }}</a>
                     </td>
-                    <td>{{ inv.ticker }}</td>
-                    <td class="text-end">{{ inv.five_year_annualised_return }}%</td>
-                    <td class="text-end">{{ inv.ten_year_annualised_return }}%</td>
-                    <td>{{ inv.currency.value }}</td>
+                    <td>{{ item.investment.ticker }}</td>
+                    {% if item.investment.currency.value == 'USD' %}
+                        <td class="text-end">${{ item.total_value | format_currency(item.investment.currency) }}</td>
+                        <td class="text-end">-</td>
+                    {% elif item.investment.currency.value == 'INR' %}
+                        <td class="text-end">-</td>
+                        <td class="text-end">₹{{ item.total_value | format_currency(item.investment.currency) }}</td>
+                    {% else %}
+                        <td class="text-end">-</td>
+                        <td class="text-end">-</td>
+                    {% endif %}
+                    <td class="text-end">
+                        {% if item.investment.five_year_annualised_return is not none %}
+                            {{ item.investment.five_year_annualised_return }}%
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if item.investment.ten_year_annualised_return is not none %}
+                            {{ item.investment.ten_year_annualised_return }}%
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                     <td>
-                        <a href="{{ url_for('edit_investment', investment_index=loop.index0) }}" class="btn btn-sm btn-outline-secondary me-2">Edit</a>
-                        <a href="{{ url_for('view_transactions', investment_name=inv.investment_name) }}" class="btn btn-sm btn-outline-info">
-                            Transactions
-                        </a>
+                        <a href="{{ url_for('edit_investment', investment_index=loop.index0) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
                     </td>
                 </tr>
                 {% endfor %}

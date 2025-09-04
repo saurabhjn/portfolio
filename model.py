@@ -20,9 +20,9 @@ class Investment:
 
     investment_name: str
     ticker: str
-    five_year_annualised_return: Decimal
-    ten_year_annualised_return: Decimal
     currency: Currency
+    five_year_annualised_return: Optional[Decimal] = None
+    ten_year_annualised_return: Optional[Decimal] = None
 
 
 @dataclass
@@ -75,11 +75,17 @@ def load_investments_from_json(filepath: str) -> List[Investment]:
             Investment(
                 investment_name=item["investment_name"],
                 ticker=item["ticker"],
-                five_year_annualised_return=Decimal(
-                    item["five_year_annualised_return"]
-                ),
-                ten_year_annualised_return=Decimal(item["ten_year_annualised_return"]),
                 currency=Currency(item["currency"]),
+                five_year_annualised_return=(
+                    Decimal(item["five_year_annualised_return"])
+                    if item.get("five_year_annualised_return") is not None
+                    else None
+                ),
+                ten_year_annualised_return=(
+                    Decimal(item["ten_year_annualised_return"])
+                    if item.get("ten_year_annualised_return") is not None
+                    else None
+                ),
             )
             for item in data
         ]
@@ -143,3 +149,20 @@ def load_transactions_from_json(filepath: str) -> Dict[str, List[Transaction]]:
         return transactions_data
     except FileNotFoundError:
         return {}  # Return empty dict if file doesn't exist
+
+
+def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, Decimal]:
+    """
+    Calculates summary totals for a list of transactions.
+
+    Returns:
+        A dictionary containing 'total_buy_quantity' and 'total_buy_amount'.
+    """
+    total_buy_quantity = Decimal(0)
+    total_buy_amount = Decimal(0)
+
+    for tx in transactions:
+        total_buy_quantity += tx.buy_quantity
+        total_buy_amount += tx.buy_quantity * tx.buy_rate
+
+    return {"total_buy_quantity": total_buy_quantity, "total_buy_amount": total_buy_amount}

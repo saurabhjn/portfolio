@@ -12,6 +12,7 @@ from model import (
     save_investments_to_json,
     load_transactions_from_json,
     save_transactions_to_json,
+    calculate_transaction_totals,
 )
 from form import InvestmentForm, TransactionForm
 
@@ -34,11 +35,35 @@ investments = load_investments_from_json(DATA_FILE)
 transactions_data = load_transactions_from_json(TRANSACTIONS_FILE)
 
 
-@app.template_filter("money_floor")
-def money_floor_filter(value):
+def _format_inr(number_str: str) -> str:
     """
-    Rounds a decimal value down to 2 places and formats it as a string
-    with two decimal places, suitable for monetary values.
+    Helper to format a number string in the Indian numbering system (lakhs, crores).
+    """
+    parts = number_str.split(".")
+    integer_part = parts[0]
+    fractional_part = parts[1] if len(parts) > 1 else ""
+
+    last_three = integer_part[-3:]
+    rest = integer_part[:-3]
+
+    if rest:
+        # Add commas to the rest of the number
+        formatted_rest = ""
+        for i, char in enumerate(reversed(rest)):
+            if i > 0 and i % 2 == 0:
+                formatted_rest += ","
+            formatted_rest += char
+        formatted_rest = formatted_rest[::-1]
+        return f"{formatted_rest},{last_three}.{fractional_part}"
+    else:
+        return f"{integer_part}.{fractional_part}"
+
+
+@app.template_filter("format_currency")
+def format_currency_filter(value, currency):
+    """
+    Formats a decimal value according to the specified currency's conventions
+    (USD or INR), rounding down to 2 decimal places.
     """
     if value is None:
         return None
@@ -46,13 +71,32 @@ def money_floor_filter(value):
     if not isinstance(value, Decimal):
         value = Decimal(str(value))
 
-    return f"{value.quantize(Decimal('0.01'), rounding=ROUND_DOWN):.2f}"
+    # Round down to 2 decimal places
+    floored_value = value.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+
+    if currency.value == "USD":
+        return f"{floored_value:,.2f}"
+    elif currency.value == "INR":
+        return _format_inr(f"{floored_value:.2f}")
+    else:
+        return f"{floored_value:.2f}"
 
 
 @app.route("/")
 def index():
     """Renders the main page with a list of all investments."""
-    return render_template("index.html", investments=investments)
+    portfolio_data = []
+    for inv in investments:
+        transactions_for_inv = transactions_data.get(inv.investment_name, [])
+        totals = calculate_transaction_totals(transactions_for_inv)
+        portfolio_data.append(
+            {
+                "investment": inv,
+                "total_value": totals["total_buy_amount"],
+            }
+        )
+
+    return render_template("index.html", portfolio_data=portfolio_data)
 
 
 @app.route("/add", methods=["GET", "POST"])
@@ -130,10 +174,15 @@ def view_transactions(investment_name):
         return redirect(url_for("index"))
 
     transactions_for_investment = transactions_data.get(investment_name, [])
+
+    # Calculate totals using the new model function
+    totals = calculate_transaction_totals(transactions_for_investment)
+
     return render_template(
         "transactions.html",
         investment=investment,
         transactions=transactions_for_investment,
+        **totals,
     )
 
 

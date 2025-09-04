@@ -16,10 +16,10 @@ class InvestmentForm(FlaskForm):
         "Ticker Symbol", validators=[DataRequired(), Length(min=1, max=20)]
     )
     five_year_annualised_return = DecimalField(
-        "5-Year Annualised Return (%)", validators=[DataRequired()], places=2
+        "5-Year Annualised Return (%)", validators=[Optional()], places=2
     )
     ten_year_annualised_return = DecimalField(
-        "10-Year Annualised Return (%)", validators=[DataRequired()], places=2
+        "10-Year Annualised Return (%)", validators=[Optional()], places=2
     )
     currency = SelectField(
         "Currency",
