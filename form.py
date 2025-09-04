@@ -13,7 +13,7 @@ class InvestmentForm(FlaskForm):
         "Investment Name", validators=[DataRequired(), Length(min=2, max=100)]
     )
     ticker = StringField(
-        "Ticker Symbol", validators=[DataRequired(), Length(min=1, max=50)]
+        "Ticker Symbol", validators=[Optional(), Length(max=50)]
     )
     five_year_annualised_return = DecimalField(
         "5-Year Annualised Return (%)", validators=[Optional()], places=2
