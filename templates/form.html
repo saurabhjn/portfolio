@@ -1,0 +1,6 @@
+{% from 'bootstrap5/form.html' import render_form %}
+
+<form method="POST" action="" novalidate>
+    {{ form.hidden_tag() }}
+    {{ render_form(form) }}
+</form>
