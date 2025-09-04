@@ -181,15 +181,19 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
     """
     total_buy_quantity = Decimal(0)
     total_buy_amount = Decimal(0)
+    total_gain_amount = Decimal(0)
 
     for tx in transactions:
         if tx.buy_quantity is not None and tx.buy_rate is not None:
             total_buy_quantity += tx.buy_quantity
             total_buy_amount += tx.buy_quantity * tx.buy_rate
+        if tx.gain_amount is not None:
+            total_gain_amount += tx.gain_amount
 
     return {
         "total_buy_quantity": total_buy_quantity,
         "total_buy_amount": total_buy_amount,
+        "total_gain_amount": total_gain_amount,
     }
 
 
@@ -217,9 +221,6 @@ def calculate_xirr(
             cash_flows.append((tx.sell_date, tx.sell_quantity * tx.sell_rate))
             total_sell_quantity += tx.sell_quantity
 
-        if tx.gain_date and tx.gain_amount is not None:
-            cash_flows.append((tx.gain_date, tx.gain_amount))
-
     # Add current market value of remaining holdings as the final positive cash flow
     remaining_quantity = total_buy_quantity - total_sell_quantity
     if remaining_quantity > 0:
@@ -233,6 +234,8 @@ def calculate_xirr(
             for tx in transactions:
                 if tx.buy_quantity is not None and tx.buy_rate is not None:
                     total_cost_basis += tx.buy_quantity * tx.buy_rate
+                if tx.gain_date and tx.gain_amount is not None:
+                    total_cost_basis += tx.gain_amount
 
             cash_flows.append((current_date, total_cost_basis))
 

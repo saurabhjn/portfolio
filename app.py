@@ -118,10 +118,16 @@ def index():
         purchase_value = totals["total_buy_amount"]
 
         # Fetch the current market rate for the investment's ticker
-        current_rate = get_current_rate(inv.ticker)
-        current_value = (
-            total_quantity * current_rate if current_rate is not None else None
-        )
+        current_rate = get_current_rate(inv.ticker) if inv.ticker else None
+
+        if current_rate is not None:
+            current_value = total_quantity * current_rate
+        else:
+            # For investments without a ticker or if rate fetch fails,
+            # calculate current value from transactions.
+            # Current Value = sum of all (buy_quantity * buy_rate) + sum of all gain_amount
+            total_gain_amount = totals.get("total_gain_amount", Decimal(0))
+            current_value = purchase_value + total_gain_amount
 
         # Accumulate totals based on currency
         if inv.currency == Currency.USD:
@@ -248,6 +254,21 @@ def view_transactions(investment_name):
         return redirect(url_for("index"))
 
     transactions_for_investment = transactions_data.get(investment_name, [])
+
+    # Sort transactions chronologically.
+    # The sort key is the earliest date found on the transaction (buy, sell, or gain).
+    # Transactions without any date are sorted to the end.
+    def get_sort_key(transaction: Transaction) -> datetime.date:
+        """Get the earliest date from a transaction to use as a sort key."""
+        dates = [
+            d
+            for d in [transaction.buy_date, transaction.sell_date, transaction.gain_date]
+            if d
+        ]
+        # A valid transaction should have a date, but this handles edge cases.
+        return min(dates) if dates else datetime.date.max
+
+    transactions_for_investment.sort(key=get_sort_key)
 
     # Calculate summary totals
     totals = calculate_transaction_totals(transactions_for_investment)
