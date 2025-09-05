@@ -81,12 +81,17 @@
                         </strong>
                     </td>
                     {# Empty cells to span the rest of the columns #}
-                    <td colspan="8">
+                    <td colspan="8" class="align-middle">
                         {% if xirr_value is not none %}
                             <strong class="ms-4">
                                 XIRR: {{ "%.2f"|format(xirr_value) }}%
                             </strong>
                         {% endif %}
+                        <strong class="ms-4">
+                            Current Value:
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
+                            {{ current_value | format_currency(investment.currency) }}
+                        </strong>
                     </td>
                 </tr>
             </tfoot>

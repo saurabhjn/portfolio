@@ -273,8 +273,23 @@ def view_transactions(investment_name):
     # Calculate summary totals
     totals = calculate_transaction_totals(transactions_for_investment)
 
-    # Calculate XIRR
-    current_rate = get_current_rate(investment.ticker)
+    # Calculate Current Value and XIRR
+    current_rate = get_current_rate(investment.ticker) if investment.ticker else None
+    remaining_quantity = (
+        totals.get("total_buy_quantity", Decimal(0))
+        - totals.get("total_sell_quantity", Decimal(0))
+    )
+
+    if current_rate is not None:
+        current_value = remaining_quantity * current_rate
+    else:
+        # For investments without a ticker or if rate fetch fails
+        current_value = (
+            totals.get("total_buy_amount", Decimal(0))
+            + totals.get("total_gain_amount", Decimal(0))
+            - totals.get("total_sell_amount", Decimal(0))
+        )
+
     xirr_value = calculate_xirr(
         transactions_for_investment, current_rate, datetime.date.today()
     )
@@ -285,6 +300,7 @@ def view_transactions(investment_name):
         transactions=transactions_for_investment,
         xirr_value=xirr_value,
         **totals,
+        current_value=current_value,
     )
 
 

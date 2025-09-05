@@ -178,21 +178,30 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
 
     Returns:
         A dictionary containing 'total_buy_quantity' and 'total_buy_amount'.
+        A dictionary containing total quantities and amounts for buys, sells,
+        and gains.
     """
     total_buy_quantity = Decimal(0)
     total_buy_amount = Decimal(0)
+    total_sell_quantity = Decimal(0)
+    total_sell_amount = Decimal(0)
     total_gain_amount = Decimal(0)
 
     for tx in transactions:
         if tx.buy_quantity is not None and tx.buy_rate is not None:
             total_buy_quantity += tx.buy_quantity
             total_buy_amount += tx.buy_quantity * tx.buy_rate
+        if tx.sell_quantity is not None and tx.sell_rate is not None:
+            total_sell_quantity += tx.sell_quantity
+            total_sell_amount += tx.sell_quantity * tx.sell_rate
         if tx.gain_amount is not None:
             total_gain_amount += tx.gain_amount
 
     return {
         "total_buy_quantity": total_buy_quantity,
         "total_buy_amount": total_buy_amount,
+        "total_sell_quantity": total_sell_quantity,
+        "total_sell_amount": total_sell_amount,
         "total_gain_amount": total_gain_amount,
     }
 
