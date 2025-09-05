@@ -43,7 +43,6 @@ class TransactionForm(FlaskForm):
     sell_date = DateField("Sell Date", format="%Y-%m-%d", validators=[Optional()])
     sell_quantity = DecimalField("Sell Quantity", validators=[Optional()], places=2)
     sell_rate = DecimalField("Sell Rate", validators=[Optional()], places=2)
-    gain_from_sale = DecimalField("Gain from Sale", validators=[Optional()], places=2)
     gain_date = DateField("Gain Date", format="%Y-%m-%d", validators=[Optional()])
     gain_amount = DecimalField("Gain Amount", validators=[Optional()], places=2)
     submit = SubmitField("Save Transaction")

@@ -10,17 +10,22 @@
         <table class="table table-striped table-hover">
             <thead class="table-dark">
                 <tr>
-                    <th>Buy Date</th>
-                    <th>Buy Qty</th>
-                    <th>Buy Rate</th>
-                    <th>Sell Date</th>
-                    <th>Sell Qty</th>
-                    <th>Sell Rate</th>
-                    <th>Gain from Sale</th>
-                    <th>Gain Date</th>
-                    <th>Gain Amount</th>
-                    <th>Description</th>
-                    <th>Actions</th>
+                    <th colspan="3" class="text-center">Buy</th>
+                    <th colspan="4" class="text-center">Sell</th>
+                    <th colspan="2" class="text-center">Gain</th>
+                    <th rowspan="2" class="align-middle">Description</th>
+                    <th rowspan="2" class="align-middle">Actions</th>
+                </tr>
+                <tr>
+                    <th>Date</th>
+                    <th>Qty</th>
+                    <th>Rate</th>
+                    <th>Date</th>
+                    <th>Qty</th>
+                    <th>Rate</th>
+                    <th>Gain</th>
+                    <th>Date</th>
+                    <th>Amount</th>
                 </tr>
             </thead>
             <tbody>
@@ -73,11 +78,11 @@
                 <tr class="table-group-divider">
                     <td><strong>Totals</strong></td>
                     <td class="text-end">
-                        <strong>{{ total_buy_quantity | format_quantity }}</strong>
+                        <strong>{{ (total_buy_quantity - total_sell_quantity) | format_quantity }}</strong>
                     </td>
                     <td class="text-end">
                         <strong>
-                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ total_buy_amount | format_currency(investment.currency) }}
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ net_buy_amount | format_currency(investment.currency) }}
                         </strong>
                     </td>
                     {# Empty cells to span the rest of the columns #}
@@ -92,6 +97,13 @@
                             {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
                             {{ current_value | format_currency(investment.currency) }}
                         </strong>
+                        {% if current_rate is not none %}
+                            <strong class="ms-4">
+                                Current Rate:
+                                {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
+                                {{ current_rate | format_currency(investment.currency) }}
+                            </strong>
+                        {% endif %}
                     </td>
                 </tr>
             </tfoot>
