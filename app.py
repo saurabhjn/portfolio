@@ -13,15 +13,18 @@ from model import (
     load_transactions_from_json,
     save_transactions_to_json,
     calculate_transaction_totals,
-    calculate_xirr,
 )
-from pyxirr import xirr
 from api_calls import (
     get_current_rate,
     get_usd_to_inr_rate,
     get_historical_usd_to_inr_rate,
 )
 from form import InvestmentForm, TransactionForm
+from xirr import (
+    calculate_investment_xirr,
+    calculate_xirr_from_cash_flows,
+    generate_cash_flows_from_transactions,
+)
 
 app = Flask(__name__)
 # Flask-WTF requires a secret key for CSRF protection.
@@ -173,6 +176,7 @@ def index():
             gain = (
                 current_value - purchase_value + total_gain_amount + total_gain_from_sale
             )
+            current_value_for_xirr = current_value
         else:
             # For investments without a ticker or if rate fetch fails,
             # current value is the net of cash flows from transactions.
@@ -181,6 +185,8 @@ def index():
             total_sell_amount = totals.get("total_sell_amount", Decimal(0))
             current_value = purchase_value + total_gain_amount - total_sell_amount
             gain = total_gain_amount + total_gain_from_sale
+            current_value_for_xirr = current_value - total_gain_amount
+
 
         # Accumulate totals based on currency
         # Calculate Gain for the investment
@@ -200,18 +206,9 @@ def index():
                 total_current_usd_ticker += current_value
             total_gain_usd_ticker += gain
 
-            # Accumulate cash flows for combined XIRR calculation
-            for tx in transactions_for_inv:
-                if tx.buy_date and tx.buy_quantity is not None and tx.buy_rate is not None:
-                    usd_ticker_cash_flows.append(
-                        (tx.buy_date, -(tx.buy_quantity * tx.buy_rate))
-                    )
-                if tx.sell_date and tx.sell_quantity is not None and tx.sell_rate is not None:
-                    usd_ticker_cash_flows.append(
-                        (tx.sell_date, tx.sell_quantity * tx.sell_rate)
-                    )
-                if tx.gain_date and tx.gain_amount is not None:
-                    usd_ticker_cash_flows.append((tx.gain_date, tx.gain_amount))
+            usd_ticker_cash_flows.extend(
+                generate_cash_flows_from_transactions(transactions_for_inv)
+            )
 
         # If it's an INR investment with a ticker, add to the market totals
         if inv.currency == Currency.INR and inv.ticker:
@@ -220,22 +217,13 @@ def index():
                 total_current_inr_ticker += current_value
             total_gain_inr_ticker += gain
 
-            # Accumulate cash flows for combined XIRR calculation
-            for tx in transactions_for_inv:
-                if tx.buy_date and tx.buy_quantity is not None and tx.buy_rate is not None:
-                    inr_ticker_cash_flows.append(
-                        (tx.buy_date, -(tx.buy_quantity * tx.buy_rate))
-                    )
-                if tx.sell_date and tx.sell_quantity is not None and tx.sell_rate is not None:
-                    inr_ticker_cash_flows.append(
-                        (tx.sell_date, tx.sell_quantity * tx.sell_rate)
-                    )
-                if tx.gain_date and tx.gain_amount is not None:
-                    inr_ticker_cash_flows.append((tx.gain_date, tx.gain_amount))
+            inr_ticker_cash_flows.extend(
+                generate_cash_flows_from_transactions(transactions_for_inv)
+            )
 
         # Calculate XIRR for the investment
-        xirr_value = calculate_xirr(
-            transactions_for_inv, current_rate, datetime.date.today()
+        xirr_value = calculate_investment_xirr(
+            transactions_for_inv, current_value_for_xirr, datetime.date.today()
         )
 
         portfolio_data.append(
@@ -251,60 +239,18 @@ def index():
         )
 
     # Calculate combined XIRR for all ticker-based USD investments
-    usd_ticker_xirr = None
-    if usd_ticker_cash_flows:
-        # Add the final total current value as the last positive cash flow
-        if total_current_usd_ticker > 0:
-            usd_ticker_cash_flows.append(
-                (datetime.date.today(), total_current_usd_ticker)
-            )
-
-        if len(usd_ticker_cash_flows) >= 2:
-            try:
-                # Sort by date and separate into two lists for the xirr function
-                usd_ticker_cash_flows.sort(key=lambda item: item[0])
-                dates, values = zip(*usd_ticker_cash_flows)
-
-                # XIRR requires at least one positive and one negative cash flow
-                if any(v > 0 for v in values) and any(v < 0 for v in values):
-                    result = xirr(dates, values)
-                    # The library can return NaN or infinity on calculation errors
-                    if (
-                        result is not None
-                        and abs(result) != float("inf")
-                        and result == result
-                    ):
-                        usd_ticker_xirr = Decimal(result) * 100
-            except (ValueError, TypeError, ZeroDivisionError):
-                usd_ticker_xirr = None  # Keep it as None on any error
+    if total_current_usd_ticker > 0:
+        usd_ticker_cash_flows.append(
+            (datetime.date.today(), total_current_usd_ticker)
+        )
+    usd_ticker_xirr = calculate_xirr_from_cash_flows(usd_ticker_cash_flows)
 
     # Calculate combined XIRR for all ticker-based INR investments
-    inr_ticker_xirr = None
-    if inr_ticker_cash_flows:
-        # Add the final total current value as the last positive cash flow
-        if total_current_inr_ticker > 0:
-            inr_ticker_cash_flows.append(
-                (datetime.date.today(), total_current_inr_ticker)
-            )
-
-        if len(inr_ticker_cash_flows) >= 2:
-            try:
-                # Sort by date and separate into two lists for the xirr function
-                inr_ticker_cash_flows.sort(key=lambda item: item[0])
-                dates, values = zip(*inr_ticker_cash_flows)
-
-                # XIRR requires at least one positive and one negative cash flow
-                if any(v > 0 for v in values) and any(v < 0 for v in values):
-                    result = xirr(dates, values)
-                    # The library can return NaN or infinity on calculation errors
-                    if (
-                        result is not None
-                        and abs(result) != float("inf")
-                        and result == result
-                    ):
-                        inr_ticker_xirr = Decimal(result) * 100
-            except (ValueError, TypeError, ZeroDivisionError):
-                inr_ticker_xirr = None  # Keep it as None on any error
+    if total_current_inr_ticker > 0:
+        inr_ticker_cash_flows.append(
+            (datetime.date.today(), total_current_inr_ticker)
+        )
+    inr_ticker_xirr = calculate_xirr_from_cash_flows(inr_ticker_cash_flows)
 
     # Fetch USD to INR conversion rate
     usd_to_inr_rate = get_usd_to_inr_rate()
@@ -337,17 +283,7 @@ def index():
                 (historical_date, -grand_total_purchase_in_inr),
                 (datetime.date.today(), grand_total_in_inr),
             ]
-            try:
-                dates, values = zip(*cash_flows)
-                result = xirr(dates, values)
-                if (
-                    result is not None
-                    and abs(result) != float("inf")
-                    and result == result
-                ):
-                    overall_xirr = Decimal(result) * 100
-            except (ValueError, TypeError, ZeroDivisionError):
-                overall_xirr = None
+            overall_xirr = calculate_xirr_from_cash_flows(cash_flows)
 
     # Calculate grand total gain in INR
     grand_total_gain_in_inr = None
@@ -529,6 +465,7 @@ def view_transactions(investment_name):
 
     if current_rate is not None:
         current_value = remaining_quantity * current_rate
+        current_value_for_xirr = current_value
     else:
         # For investments without a ticker or if rate fetch fails
         current_value = (
@@ -536,9 +473,11 @@ def view_transactions(investment_name):
             + totals.get("total_gain_amount", Decimal(0))
             - totals.get("total_sell_amount", Decimal(0))
         )
+        current_value_for_xirr = current_value - totals.get("total_gain_amount", Decimal(0))
 
-    xirr_value = calculate_xirr(
-        transactions_for_investment, current_rate, datetime.date.today()
+
+    xirr_value = calculate_investment_xirr(
+        transactions_for_investment, current_value_for_xirr, datetime.date.today()
     )
 
     return render_template(

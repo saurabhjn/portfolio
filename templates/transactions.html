@@ -51,7 +51,11 @@
                     </td>
                     <td class="text-end">
                         {% if tx.gain_from_sale is not none %}
-                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.gain_from_sale | format_currency(investment.currency) }}
+                            {# Check if the holding period is 2 years (730 days) or more for Long-Term Capital Gain (LTCG) #}
+                            {% set is_long_term = tx.buy_date and tx.sell_date and (tx.sell_date - tx.buy_date).days >= 730 %}
+                            <span class="{{ 'text-success' if is_long_term else '' }}" data-bs-toggle="tooltip" title="{{ 'LTCG' if is_long_term else 'STCG' }}">
+                                {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ tx.gain_from_sale | format_currency(investment.currency) }}
+                            </span>
                         {% else %}
                             -
                         {% endif %}
@@ -82,6 +86,7 @@
                     </td>
                     <td class="text-end">
                         <strong>
+                            Purchase Value:
                             {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ net_buy_amount | format_currency(investment.currency) }}
                         </strong>
                     </td>
@@ -113,4 +118,14 @@
             No transactions found for {{ investment.investment_name }}. <a href="{{ url_for('add_transaction', investment_name=investment.investment_name) }}" class="alert-link">Add one now!</a>
         </div>
     {% endif %}
+
+<script>
+    // Enable Bootstrap tooltips on this page
+    document.addEventListener('DOMContentLoaded', function () {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+</script>
 {% endblock %}
