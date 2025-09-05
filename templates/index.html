@@ -49,18 +49,18 @@
                         {% endif %}
                     </td>
                     <td class="text-end">
-                        {% if item.investment.currency.value == 'USD' %}${% elif item.investment.currency.value == 'INR' %}₹{% endif %}{{ item.purchase_value | format_currency(item.investment.currency) }}
+                        {% if item.investment.currency.value == 'USD' %}${% elif item.investment.currency.value == 'INR' %}₹{% endif %}{{ item.purchase_value | format_currency_nodot(item.investment.currency) }}
                     </td>
                     <td class="text-end">
                         {% if item.current_value is not none %}
-                            {% if item.investment.currency.value == 'USD' %}${% elif item.investment.currency.value == 'INR' %}₹{% endif %}{{ item.current_value | format_currency(item.investment.currency) }}
+                            {% if item.investment.currency.value == 'USD' %}${% elif item.investment.currency.value == 'INR' %}₹{% endif %}{{ item.current_value | format_currency_nodot(item.investment.currency) }}
                         {% else %}
                             -
                         {% endif %}
                     </td>
                     <td class="text-end">
                         {% if item.gain is not none %}
-                            {% if item.investment.currency.value == 'USD' %}${% elif item.investment.currency.value == 'INR' %}₹{% endif %}{{ item.gain | format_currency(item.investment.currency) }}
+                            {% if item.investment.currency.value == 'USD' %}${% elif item.investment.currency.value == 'INR' %}₹{% endif %}{{ item.gain | format_currency_nodot(item.investment.currency) }}
                         {% else %}
                             -
                         {% endif %}

@@ -111,6 +111,29 @@ def format_quantity_filter(value):
         return value
 
 
+@app.template_filter("format_currency_nodot")
+def format_currency_nodot_filter(value, currency):
+    """
+    Formats a decimal value according to the specified currency's conventions
+    (USD or INR), rounding down to 0 decimal places.
+    """
+    if value is None:
+        return None
+    # Ensure value is a Decimal for accurate quantization
+    if not isinstance(value, Decimal):
+        value = Decimal(str(value))
+
+    # Round down to 0 decimal places
+    floored_value = value.quantize(Decimal("1"), rounding=ROUND_DOWN)
+
+    if currency.value == "USD":
+        return f"{floored_value:,.0f}"
+    elif currency.value == "INR":
+        return _format_inr(f"{floored_value:.2f}").split(".")[0]
+    else:
+        return f"{floored_value:,.0f}"
+
+
 @app.route("/")
 def index():
     """Renders the main page with a list of all investments."""
@@ -332,48 +355,48 @@ def index():
         grand_total_gain_in_inr = grand_total_in_inr - grand_total_purchase_in_inr
 
     # Format totals for display
-    total_purchase_usd_str = format_currency_filter(
+    total_purchase_usd_str = format_currency_nodot_filter(
         total_purchase_value_usd, Currency.USD
     )
-    total_purchase_inr_str = format_currency_filter(
+    total_purchase_inr_str = format_currency_nodot_filter(
         total_purchase_value_inr, Currency.INR
     )
-    total_current_usd_str = format_currency_filter(
+    total_current_usd_str = format_currency_nodot_filter(
         total_current_value_usd, Currency.USD
     )
-    total_current_inr_str = format_currency_filter(
+    total_current_inr_str = format_currency_nodot_filter(
         total_current_value_inr, Currency.INR
     )
-    total_purchase_usd_ticker_str = format_currency_filter(
+    total_purchase_usd_ticker_str = format_currency_nodot_filter(
         total_purchase_usd_ticker, Currency.USD
     )
-    total_current_usd_ticker_str = format_currency_filter(
+    total_current_usd_ticker_str = format_currency_nodot_filter(
         total_current_usd_ticker, Currency.USD
     )
-    total_purchase_inr_ticker_str = format_currency_filter(
+    total_purchase_inr_ticker_str = format_currency_nodot_filter(
         total_purchase_inr_ticker, Currency.INR
     )
-    total_current_inr_ticker_str = format_currency_filter(
+    total_current_inr_ticker_str = format_currency_nodot_filter(
         total_current_inr_ticker, Currency.INR
     )
-    total_gain_usd_ticker_str = format_currency_filter(
+    total_gain_usd_ticker_str = format_currency_nodot_filter(
         total_gain_usd_ticker, Currency.USD
     )
-    total_gain_inr_ticker_str = format_currency_filter(
+    total_gain_inr_ticker_str = format_currency_nodot_filter(
         total_gain_inr_ticker, Currency.INR
     )
     grand_total_in_inr_str = (
-        format_currency_filter(grand_total_in_inr, Currency.INR)
+        format_currency_nodot_filter(grand_total_in_inr, Currency.INR)
         if grand_total_in_inr is not None
         else None
     )
     grand_total_purchase_in_inr_str = (
-        format_currency_filter(grand_total_purchase_in_inr, Currency.INR)
+        format_currency_nodot_filter(grand_total_purchase_in_inr, Currency.INR)
         if grand_total_purchase_in_inr is not None
         else None
     )
     grand_total_gain_in_inr_str = (
-        format_currency_filter(grand_total_gain_in_inr, Currency.INR)
+        format_currency_nodot_filter(grand_total_gain_in_inr, Currency.INR)
         if grand_total_gain_in_inr is not None
         else None
     )
