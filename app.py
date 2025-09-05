@@ -1,6 +1,6 @@
 import os
-from typing import Optional
-from flask import Flask, render_template, redirect, url_for, flash, request
+from typing import List, Optional
+from flask import Flask, render_template, redirect, url_for, flash, request, g
 import datetime
 from decimal import Decimal, ROUND_DOWN
 from flask_bootstrap import Bootstrap5
@@ -44,6 +44,51 @@ investments = load_investments_from_json(DATA_FILE)
 # This dictionary will hold our transaction objects in memory.
 # It's loaded from the JSON file when the application starts.
 transactions_data = load_transactions_from_json(TRANSACTIONS_FILE)
+
+
+def _calculate_investment_metrics(
+    investment: Investment, transactions: List[Transaction]
+) -> dict:
+    """
+    Calculates key financial metrics for a single investment based on its transactions.
+
+    Args:
+        investment: The Investment object.
+        transactions: A list of Transaction objects for the investment.
+
+    Returns:
+        A dictionary containing calculated metrics like 'purchase_value',
+        'current_value', 'gain', 'current_rate', etc.
+    """
+    totals = calculate_transaction_totals(transactions)
+    remaining_quantity = totals["total_buy_quantity"] - totals["total_sell_quantity"]
+    purchase_value = totals["net_buy_amount"]
+
+    current_rate = get_current_rate(investment.ticker) if investment.ticker else None
+
+    total_gain_amount = totals.get("total_gain_amount", Decimal(0))
+    total_gain_from_sale = totals.get("total_gain_from_sale", Decimal(0))
+
+    if current_rate is not None:
+        current_value = remaining_quantity * current_rate
+        gain = current_value - purchase_value + total_gain_amount + total_gain_from_sale
+        current_value_for_xirr = current_value
+    else:
+        # For investments without a ticker or if rate fetch fails
+        total_sell_amount = totals.get("total_sell_amount", Decimal(0))
+        current_value = purchase_value + total_gain_amount - total_sell_amount
+        gain = total_gain_amount + total_gain_from_sale
+        current_value_for_xirr = current_value - total_gain_amount
+
+    return {
+        "totals": totals,
+        "remaining_quantity": remaining_quantity,
+        "purchase_value": purchase_value,
+        "current_rate": current_rate,
+        "current_value": current_value,
+        "gain": gain,
+        "current_value_for_xirr": current_value_for_xirr,
+    }
 
 
 def _format_inr(number_str: str) -> str:
@@ -159,97 +204,66 @@ def index():
     inr_ticker_cash_flows = []
 
     for inv in investments:
-        transactions_for_inv = transactions_data.get(inv.investment_name, [])
-        totals = calculate_transaction_totals(transactions_for_inv)
-        remaining_quantity = (
-            totals["total_buy_quantity"] - totals["total_sell_quantity"]
-        )
-        purchase_value = totals["net_buy_amount"]
-
-        # Fetch the current market rate for the investment's ticker
-        current_rate = get_current_rate(inv.ticker) if inv.ticker else None
-
-        if current_rate is not None:
-            current_value = remaining_quantity * current_rate
-            total_gain_amount = totals.get("total_gain_amount", Decimal(0))
-            total_gain_from_sale = totals.get("total_gain_from_sale", Decimal(0))
-            gain = (
-                current_value - purchase_value + total_gain_amount + total_gain_from_sale
-            )
-            current_value_for_xirr = current_value
-        else:
-            # For investments without a ticker or if rate fetch fails,
-            # current value is the net of cash flows from transactions.
-            # This should match the logic in view_transactions.
-            total_gain_amount = totals.get("total_gain_amount", Decimal(0))
-            total_sell_amount = totals.get("total_sell_amount", Decimal(0))
-            current_value = purchase_value + total_gain_amount - total_sell_amount
-            gain = total_gain_amount + total_gain_from_sale
-            current_value_for_xirr = current_value - total_gain_amount
-
+        transactions = transactions_data.get(inv.investment_name, [])
+        metrics = _calculate_investment_metrics(inv, transactions)
 
         # Accumulate totals based on currency
-        # Calculate Gain for the investment
         if inv.currency == Currency.USD:
-            total_purchase_value_usd += purchase_value
-            if current_value is not None:
-                total_current_value_usd += current_value
+            total_purchase_value_usd += metrics["purchase_value"]
+            if metrics["current_value"] is not None:
+                total_current_value_usd += metrics["current_value"]
         elif inv.currency == Currency.INR:
-            total_purchase_value_inr += purchase_value
-            if current_value is not None:
-                total_current_value_inr += current_value
+            total_purchase_value_inr += metrics["purchase_value"]
+            if metrics["current_value"] is not None:
+                total_current_value_inr += metrics["current_value"]
 
         # If it's a USD investment with a ticker, add to the market totals
         if inv.currency == Currency.USD and inv.ticker:
-            total_purchase_usd_ticker += purchase_value
-            if current_value is not None:
-                total_current_usd_ticker += current_value
-            total_gain_usd_ticker += gain
+            total_purchase_usd_ticker += metrics["purchase_value"]
+            if metrics["current_value"] is not None:
+                total_current_usd_ticker += metrics["current_value"]
+            total_gain_usd_ticker += metrics["gain"]
 
             usd_ticker_cash_flows.extend(
-                generate_cash_flows_from_transactions(transactions_for_inv)
+                generate_cash_flows_from_transactions(transactions)
             )
 
         # If it's an INR investment with a ticker, add to the market totals
         if inv.currency == Currency.INR and inv.ticker:
-            total_purchase_inr_ticker += purchase_value
-            if current_value is not None:
-                total_current_inr_ticker += current_value
-            total_gain_inr_ticker += gain
+            total_purchase_inr_ticker += metrics["purchase_value"]
+            if metrics["current_value"] is not None:
+                total_current_inr_ticker += metrics["current_value"]
+            total_gain_inr_ticker += metrics["gain"]
 
             inr_ticker_cash_flows.extend(
-                generate_cash_flows_from_transactions(transactions_for_inv)
+                generate_cash_flows_from_transactions(transactions)
             )
 
         # Calculate XIRR for the investment
         xirr_value = calculate_investment_xirr(
-            transactions_for_inv, current_value_for_xirr, datetime.date.today()
+            transactions, metrics["current_value_for_xirr"], datetime.date.today()
         )
 
         portfolio_data.append(
             {
                 "investment": inv,
-                "total_quantity": remaining_quantity,
-                "current_rate": current_rate,
-                "purchase_value": purchase_value,
-                "current_value": current_value,
+                "total_quantity": metrics["remaining_quantity"],
+                "current_rate": metrics["current_rate"],
+                "purchase_value": metrics["purchase_value"],
+                "current_value": metrics["current_value"],
                 "xirr_value": xirr_value,
-                "gain": gain,
+                "gain": metrics["gain"],
             }
         )
 
     # Calculate combined XIRR for all ticker-based USD investments
     if total_current_usd_ticker > 0:
-        usd_ticker_cash_flows.append(
-            (datetime.date.today(), total_current_usd_ticker)
-        )
+        usd_ticker_cash_flows.append((datetime.date.today(), total_current_usd_ticker))
     usd_ticker_xirr = calculate_xirr_from_cash_flows(usd_ticker_cash_flows)
 
     # Calculate combined XIRR for all ticker-based INR investments
     if total_current_inr_ticker > 0:
-        inr_ticker_cash_flows.append(
-            (datetime.date.today(), total_current_inr_ticker)
-        )
+        inr_ticker_cash_flows.append((datetime.date.today(), total_current_inr_ticker))
     inr_ticker_xirr = calculate_xirr_from_cash_flows(inr_ticker_cash_flows)
 
     # Fetch USD to INR conversion rate
@@ -452,42 +466,30 @@ def view_transactions(investment_name):
         # A valid transaction should have a date, but this handles edge cases.
         return min(dates) if dates else datetime.date.max
 
-    transactions_for_investment.sort(key=get_sort_key)
+    sorted_transactions = sorted(transactions_for_investment, key=get_sort_key)
 
-    # Calculate summary totals
-    totals = calculate_transaction_totals(transactions_for_investment)
-
-    # Calculate Current Value and XIRR
-    current_rate = get_current_rate(investment.ticker) if investment.ticker else None
-    remaining_quantity = totals.get("total_buy_quantity", Decimal(0)) - totals.get(
-        "total_sell_quantity", Decimal(0)
-    )
-
-    if current_rate is not None:
-        current_value = remaining_quantity * current_rate
-        current_value_for_xirr = current_value
-    else:
-        # For investments without a ticker or if rate fetch fails
-        current_value = (
-            totals.get("total_buy_amount", Decimal(0))
-            + totals.get("total_gain_amount", Decimal(0))
-            - totals.get("total_sell_amount", Decimal(0))
-        )
-        current_value_for_xirr = current_value - totals.get("total_gain_amount", Decimal(0))
-
+    # Use the helper to get all calculated metrics
+    metrics = _calculate_investment_metrics(investment, sorted_transactions)
 
     xirr_value = calculate_investment_xirr(
-        transactions_for_investment, current_value_for_xirr, datetime.date.today()
+        sorted_transactions, metrics["current_value_for_xirr"], datetime.date.today()
     )
 
     return render_template(
         "transactions.html",
         investment=investment,
-        transactions=transactions_for_investment,
+        transactions=sorted_transactions,
         xirr_value=xirr_value,
-        **totals,
-        current_value=current_value,
-        current_rate=current_rate,
+        # Pass totals and other metrics to the template
+        total_buy_quantity=metrics["totals"]["total_buy_quantity"],
+        total_buy_amount=metrics["totals"]["total_buy_amount"],
+        total_sell_quantity=metrics["totals"]["total_sell_quantity"],
+        total_sell_amount=metrics["totals"]["total_sell_amount"],
+        total_gain_amount=metrics["totals"]["total_gain_amount"],
+        total_gain_from_sale=metrics["totals"]["total_gain_from_sale"],
+        net_buy_amount=metrics["totals"]["net_buy_amount"],
+        current_value=metrics["current_value"],
+        current_rate=metrics["current_rate"],
     )
 
 
