@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title or 'My Flask App' }}</title>
     {{ bootstrap.load_css() }}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
@@ -25,9 +26,12 @@
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
                             <li><a class="dropdown-item" href="{{ url_for('add_investment') }}">Add Investment</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('add_transaction') }}">Add Transaction</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('reload_data') }}">Reload Data</a></li>
                         </ul>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('reload_data') }}" title="Reload Data from Disk">
+                            <i class="bi bi-arrow-clockwise fs-5"></i>
+                        </a>
                     </li>
                 </ul>
             </div>

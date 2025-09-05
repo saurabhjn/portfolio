@@ -122,7 +122,7 @@ def index():
         remaining_quantity = (
             totals["total_buy_quantity"] - totals["total_sell_quantity"]
         )
-        purchase_value = totals["total_buy_amount"]
+        purchase_value = totals["net_buy_amount"]
 
         # Fetch the current market rate for the investment's ticker
         current_rate = get_current_rate(inv.ticker) if inv.ticker else None
@@ -135,9 +135,7 @@ def index():
             # This should match the logic in view_transactions.
             total_gain_amount = totals.get("total_gain_amount", Decimal(0))
             total_sell_amount = totals.get("total_sell_amount", Decimal(0))
-            current_value = (
-                purchase_value + total_gain_amount - total_sell_amount
-            )
+            current_value = purchase_value + total_gain_amount - total_sell_amount
 
         # Accumulate totals based on currency
         if inv.currency == Currency.USD:
@@ -272,7 +270,11 @@ def view_transactions(investment_name):
         """Get the earliest date from a transaction to use as a sort key."""
         dates = [
             d
-            for d in [transaction.buy_date, transaction.sell_date, transaction.gain_date]
+            for d in [
+                transaction.buy_date,
+                transaction.sell_date,
+                transaction.gain_date,
+            ]
             if d
         ]
         # A valid transaction should have a date, but this handles edge cases.
@@ -285,9 +287,8 @@ def view_transactions(investment_name):
 
     # Calculate Current Value and XIRR
     current_rate = get_current_rate(investment.ticker) if investment.ticker else None
-    remaining_quantity = (
-        totals.get("total_buy_quantity", Decimal(0))
-        - totals.get("total_sell_quantity", Decimal(0))
+    remaining_quantity = totals.get("total_buy_quantity", Decimal(0)) - totals.get(
+        "total_sell_quantity", Decimal(0)
     )
 
     if current_rate is not None:
@@ -339,17 +340,10 @@ def add_transaction(investment_name=None):
 
         # Calculate gain_from_sale if it's a sell transaction
         gain_from_sale = None
-        if form.sell_quantity.data and form.sell_rate.data:
-            transactions_for_inv = transactions_data.get(investment_name_from_form, [])
-            totals = calculate_transaction_totals(transactions_for_inv)
-            total_buy_quantity = totals.get("total_buy_quantity", Decimal(0))
-            total_buy_amount = totals.get("total_buy_amount", Decimal(0))
-
-            if total_buy_quantity > 0:
-                average_buy_rate = total_buy_amount / total_buy_quantity
-                gain_from_sale = (
-                    form.sell_rate.data - average_buy_rate
-                ) * form.sell_quantity.data
+        if form.sell_quantity.data and form.sell_rate.data and form.buy_rate.data:
+            gain_from_sale = (
+                form.sell_rate.data - form.buy_rate.data
+            ) * form.sell_quantity.data
 
         new_transaction = Transaction(
             buy_date=form.buy_date.data,
@@ -402,28 +396,10 @@ def edit_transaction(investment_name, transaction_index):
 
         # Calculate gain_from_sale if it's a sell transaction
         gain_from_sale = None
-        if form.sell_quantity.data and form.sell_rate.data:
-            # When calculating avg buy rate for an edit, we must exclude the transaction being edited
-            # if it was a buy, to avoid using its own values in the calculation.
-            # For simplicity and consistency, we calculate based on all *other* transactions.
-            temp_transactions = transactions_data.get(investment_name, [])[:]
-            temp_transactions.pop(transaction_index)
-
-            # If the investment is being changed, we need to use the new investment's transactions
-            if new_investment_name != investment_name:
-                transactions_for_calc = transactions_data.get(new_investment_name, [])
-            else:
-                transactions_for_calc = temp_transactions
-
-            totals = calculate_transaction_totals(transactions_for_calc)
-            total_buy_quantity = totals.get("total_buy_quantity", Decimal(0))
-            total_buy_amount = totals.get("total_buy_amount", Decimal(0))
-
-            if total_buy_quantity > 0:
-                average_buy_rate = total_buy_amount / total_buy_quantity
-                gain_from_sale = (
-                    form.sell_rate.data - average_buy_rate
-                ) * form.sell_quantity.data
+        if form.sell_quantity.data and form.sell_rate.data and form.buy_rate.data:
+            gain_from_sale = (
+                form.sell_rate.data - form.buy_rate.data
+            ) * form.sell_quantity.data
 
         # Update the transaction object's data
         transaction_to_edit.buy_date = form.buy_date.data

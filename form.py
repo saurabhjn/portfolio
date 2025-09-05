@@ -37,15 +37,22 @@ class TransactionForm(FlaskForm):
         format="%Y-%m-%d",  # Expected date format
         validators=[Optional()],
     )
-    buy_quantity = DecimalField("Buy Quantity", validators=[Optional()], places=2)
-    buy_rate = DecimalField("Buy Rate", validators=[Optional()], places=2)
+    buy_quantity = DecimalField("Buy Quantity", validators=[Optional()], places=4)
+    buy_rate = DecimalField("Buy Rate", validators=[Optional()], places=4)
     description = StringField("Description", validators=[Optional(), Length(max=200)])
     sell_date = DateField("Sell Date", format="%Y-%m-%d", validators=[Optional()])
-    sell_quantity = DecimalField("Sell Quantity", validators=[Optional()], places=2)
-    sell_rate = DecimalField("Sell Rate", validators=[Optional()], places=2)
+    sell_quantity = DecimalField("Sell Quantity", validators=[Optional()], places=4)
+    sell_rate = DecimalField("Sell Rate", validators=[Optional()], places=4)
     gain_date = DateField("Gain Date", format="%Y-%m-%d", validators=[Optional()])
     gain_amount = DecimalField("Gain Amount", validators=[Optional()], places=2)
     submit = SubmitField("Save Transaction")
+
+    def __init__(self, *args, **kwargs):
+        # Custom __init__ to accept transaction data for validation
+        self.transactions_data = kwargs.pop("transactions_data", {})
+        self.original_investment_name = kwargs.pop("original_investment_name", None)
+        self.transaction_index = kwargs.pop("transaction_index", None)
+        super().__init__(*args, **kwargs)
 
     def validate(self, extra_validators=None):
         """
@@ -104,5 +111,19 @@ class TransactionForm(FlaskForm):
                 "A transaction requires at least one complete group: Buy, Sell, or Gain."
             )
             has_error = True
+
+        # New validation: Ensure sell_quantity does not exceed available quantity
+        if (
+            self.sell_quantity.data is not None
+            and self.sell_quantity.data > 0
+            and not self.sell_quantity.errors
+            and self.buy_quantity.data is not None
+            and self.buy_quantity.data > 0
+        ):
+            if self.sell_quantity.data > self.buy_quantity.data:
+                self.sell_quantity.errors.append(
+                    f"Sell quantity cannot exceed available quantity ({self.buy_quantity.data:f})."
+                )
+                has_error = True
 
         return not has_error
