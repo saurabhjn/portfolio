@@ -7,7 +7,11 @@
     </div>
 
     {% if portfolio_data %}
-        <table class="table table-striped table-hover">
+        <div class="d-flex justify-content-start align-items-center mb-2" id="toggle-small-investments-container" style="display: none;">
+            <button id="toggle-small-investments-btn" class="btn btn-sm btn-outline-secondary py-0 px-1" type="button">+</button>
+            <span class="ms-2 small-investments-toggle-text"></span>
+        </div>
+        <table class="table table-striped table-hover" id="investments-table">
             <thead class="table-dark">
                 <tr>
                     <th>Ticker</th>
@@ -17,15 +21,15 @@
                     <th>Purchase Value</th>
                     <th>Current Value</th>
                     <th>Gain</th>
-                    <th>XIRR</th>
-                    <th>5-Year Return</th>
-                    <th>10-Year Return</th>
-                    <th>Actions</th>
+                    <th>XIRR <button id="toggle-cols-btn" class="btn btn-sm btn-outline-light py-0 px-1 ms-1" type="button">+</button></th>
+                    <th class="collapsible-col">5-Year Return</th>
+                    <th class="collapsible-col">10-Year Return</th>
+                    <th class="collapsible-col">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in portfolio_data %}
-                <tr>
+                <tr {% if item.current_value is not none and item.current_value < 100 %}class="collapsible-row-small-value"{% endif %}>
                     <td>{{ item.investment.ticker }}</td>
                     <td>
                         <a href="{{ url_for('view_transactions', investment_name=item.investment.investment_name) }}">{{ item.investment.investment_name }}</a>
@@ -68,21 +72,21 @@
                             -
                         {% endif %}
                     </td>
-                    <td class="text-end">
+                    <td class="text-end collapsible-col">
                         {% if item.investment.five_year_annualised_return is not none %}
                             {{ item.investment.five_year_annualised_return }}%
                         {% else %}
                             -
                         {% endif %}
                     </td>
-                    <td class="text-end">
+                    <td class="text-end collapsible-col">
                         {% if item.investment.ten_year_annualised_return is not none %}
                             {{ item.investment.ten_year_annualised_return }}%
                         {% else %}
                             -
                         {% endif %}
                     </td>
-                    <td>
+                    <td class="collapsible-col">
                         <a href="{{ url_for('edit_investment', investment_index=loop.index0) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
                     </td>
                 </tr>
@@ -105,7 +109,7 @@
                             <strong>{{ "%.2f"|format(usd_ticker_xirr) }}%</strong>
                         {% endif %}
                     </td>
-                    <td colspan="3"></td>
+                    <td colspan="3" class="collapsible-col"></td>
                 </tr>
                 <tr>
                     <td colspan="4" class="align-bottom"><strong>Total USD Investments</strong></td>
@@ -115,7 +119,8 @@
                     <td class="text-end align-bottom">
                         <strong>${{ total_current_usd_str }}</strong>
                     </td>
-                    <td colspan="5"></td>
+                    <td colspan="2"></td>
+                    <td colspan="3" class="collapsible-col"></td>
                 </tr>
                 <tr>
                     <td colspan="4" class="align-bottom"><strong>India Market Investments</strong></td>
@@ -133,7 +138,7 @@
                             <strong>{{ "%.2f"|format(inr_ticker_xirr) }}%</strong>
                         {% endif %}
                     </td>
-                    <td colspan="3"></td>
+                    <td colspan="3" class="collapsible-col"></td>
                 </tr>
                 <tr>
                     <td colspan="4" class="align-bottom"><strong>Total INR Investments</strong></td>
@@ -143,7 +148,45 @@
                     <td class="text-end align-bottom">
                         <strong>₹{{ total_current_inr_str }}</strong>
                     </td>
-                    <td colspan="5"></td>
+                    <td colspan="2"></td>
+                    <td colspan="3" class="collapsible-col"></td>
+                </tr>
+                <tr class="table-group-divider">
+                    <td colspan="4" class="align-bottom"><strong>Total Portfolio Value (in INR)</strong></td>
+                    <td class="text-end align-bottom">
+                        <strong>
+                        {% if grand_total_purchase_in_inr_str %}
+                            ₹{{ grand_total_purchase_in_inr_str }}
+                        {% else %}
+                            -
+                        {% endif %}
+                        </strong>
+                    </td>
+                    <td class="text-end align-bottom">
+                        <strong>
+                        {% if grand_total_in_inr_str %}
+                            ₹{{ grand_total_in_inr_str }}
+                        {% else %}
+                            -
+                        {% endif %}
+                        </strong>
+                    </td>
+                    <td class="text-end align-bottom">
+                        <strong>
+                        {% if grand_total_gain_in_inr_str %}
+                            ₹{{ grand_total_gain_in_inr_str }}
+                        {% else %}
+                            -
+                        {% endif %}
+                        </strong>
+                    </td>
+                    <td></td>
+                    <td class="text-end align-bottom">
+                        {% if overall_xirr is not none %}
+                            <strong>{{ "%.2f"|format(overall_xirr) }}%</strong>
+                        {% endif %}
+                    </td>
+                    <td colspan="3" class="collapsible-col"></td>
                 </tr>
             </tfoot>
         </table>
@@ -152,4 +195,66 @@
             You have no investments yet. <a href="{{ url_for('add_investment') }}" class="alert-link">Add one now!</a>
         </div>
     {% endif %}
+
+<style>
+    .collapsible-col {
+        display: none;
+    }
+    .collapsible-row-small-value {
+        display: none;
+    }
+    #investments-table.show-small-investments .collapsible-row-small-value {
+        display: table-row;
+        vertical-align: middle;
+    }
+    #investments-table.expanded .collapsible-col {
+        display: table-cell;
+        vertical-align: middle;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const toggleBtn = document.getElementById('toggle-cols-btn');
+        const table = document.getElementById('investments-table');
+
+        if (toggleBtn && table) {
+            toggleBtn.addEventListener('click', function () {
+                table.classList.toggle('expanded');
+                if (table.classList.contains('expanded')) {
+                    toggleBtn.textContent = '−'; // Minus sign
+                } else {
+                    toggleBtn.textContent = '+';
+                }
+            });
+        }
+
+        // New script for collapsible rows with small value
+        const toggleSmallBtn = document.getElementById('toggle-small-investments-btn');
+        const toggleSmallContainer = document.getElementById('toggle-small-investments-container');
+        const smallValueRows = table ? table.querySelectorAll('.collapsible-row-small-value') : [];
+
+        if (smallValueRows.length > 0) {
+            toggleSmallContainer.style.display = 'flex'; // Use flex to align items
+            const toggleText = toggleSmallContainer.querySelector('.small-investments-toggle-text');
+            
+            const updateText = () => {
+                if (table.classList.contains('show-small-investments')) {
+                    toggleSmallBtn.textContent = '−';
+                    toggleText.textContent = `Hide ${smallValueRows.length} small investment(s)`;
+                } else {
+                    toggleSmallBtn.textContent = '+';
+                    toggleText.textContent = `Show ${smallValueRows.length} small investment(s)`;
+                }
+            };
+
+            toggleSmallBtn.addEventListener('click', function() {
+                table.classList.toggle('show-small-investments');
+                updateText();
+            });
+            
+            updateText(); // Set initial text
+        }
+    });
+</script>
 {% endblock %}

@@ -75,7 +75,7 @@ def get_current_rate(ticker: str) -> Optional[Decimal]:
     # Check for a fresh cache hit first
     if ticker in rate_cache:
         cached_time, cached_rate = rate_cache[ticker]
-        if now - cached_time < datetime.timedelta(minutes=30):
+        if now - cached_time < datetime.timedelta(minutes=60):
             print(f"Cache hit for {ticker}. Returning cached rate.")
             return cached_rate
 
@@ -135,6 +135,93 @@ def get_current_rate(ticker: str) -> Optional[Decimal]:
             print(f"Request failed for {ticker}: {e}")
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             print(f"Failed to parse data for {ticker}: {e}")
+
+    # If we got a new rate, update cache and return it
+    if rate is not None:
+        rate_cache[ticker] = (now, rate)
+        save_rate_cache(RATE_CACHE_FILE, rate_cache)
+        return rate
+
+    # If API call failed, fall back to any existing cached value (even stale)
+    if ticker in rate_cache:
+        print(f"API call failed for {ticker}. Returning stale cached rate.")
+        return rate_cache[ticker][1]
+
+    # If API failed and no cache ever existed, return None
+    return None
+
+
+def get_historical_usd_to_inr_rate(date: datetime.date) -> Optional[Decimal]:
+    """
+    Fetches the USD to INR conversion rate for a specific date.
+    Results are cached permanently.
+    """
+    date_str = date.isoformat()
+    ticker = f"USD_INR_RATE_{date_str}"
+
+    # For historical rates, if it's in the cache, it's permanent.
+    if ticker in rate_cache:
+        # The rate for a past date never changes, so we can ignore the timestamp.
+        print(f"Permanent cache hit for {ticker}. Returning cached rate.")
+        return rate_cache[ticker][1]
+
+    print(f"Cache miss for {ticker}. Fetching from source.")
+    rate = None
+    try:
+        # Using frankfurter.app for free historical rates
+        url = f"https://api.frankfurter.app/{date_str}?from=USD&to=INR"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        inr_rate = data.get("rates", {}).get("INR")
+        if inr_rate:
+            rate = Decimal(str(inr_rate))
+            print(f"frankfurter.app success for {ticker}: rate {rate}")
+    except (requests.exceptions.RequestException, json.JSONDecodeError, KeyError) as e:
+        print(f"frankfurter.app failed for {ticker}: {e}")
+        rate = None
+
+    # If we got a new rate, update cache and return it
+    if rate is not None:
+        # Store with current timestamp, but we'll ignore it on subsequent reads
+        rate_cache[ticker] = (datetime.datetime.now(), rate)
+        save_rate_cache(RATE_CACHE_FILE, rate_cache)
+        return rate
+
+    # If API failed and no cache ever existed, return None
+    return None
+
+
+def get_usd_to_inr_rate() -> Optional[Decimal]:
+    """
+    Fetches the latest USD to INR conversion rate, with a 60-minute cache.
+    """
+    ticker = "USD_INR_RATE"  # A special key for the cache
+    now = datetime.datetime.now()
+
+    # Check for a fresh cache hit first
+    if ticker in rate_cache:
+        cached_time, cached_rate = rate_cache[ticker]
+        if now - cached_time < datetime.timedelta(minutes=30):
+            print(f"Cache hit for {ticker}. Returning cached rate.")
+            return cached_rate
+
+    print(f"Cache miss or stale for {ticker}. Fetching from source.")
+    rate = None
+    try:
+        # Using a free API. A more robust solution might use a paid service.
+        response = requests.get(
+            "https://api.exchangerate-api.com/v4/latest/USD", timeout=5
+        )
+        response.raise_for_status()
+        data = response.json()
+        inr_rate = data.get("rates", {}).get("INR")
+        if inr_rate:
+            rate = Decimal(str(inr_rate))
+            print(f"exchangerate-api success for USD->INR: rate {rate}")
+    except (requests.exceptions.RequestException, json.JSONDecodeError, KeyError) as e:
+        print(f"exchangerate-api failed for USD->INR: {e}")
+        rate = None
 
     # If we got a new rate, update cache and return it
     if rate is not None:

@@ -2,7 +2,6 @@ import os
 from typing import Optional
 from flask import Flask, render_template, redirect, url_for, flash, request
 import datetime
-import json
 from decimal import Decimal, ROUND_DOWN
 from flask_bootstrap import Bootstrap5
 from model import (
@@ -17,7 +16,11 @@ from model import (
     calculate_xirr,
 )
 from pyxirr import xirr
-from api_calls import get_current_rate
+from api_calls import (
+    get_current_rate,
+    get_usd_to_inr_rate,
+    get_historical_usd_to_inr_rate,
+)
 from form import InvestmentForm, TransactionForm
 
 app = Flask(__name__)
@@ -142,6 +145,11 @@ def index():
 
         if current_rate is not None:
             current_value = remaining_quantity * current_rate
+            total_gain_amount = totals.get("total_gain_amount", Decimal(0))
+            total_gain_from_sale = totals.get("total_gain_from_sale", Decimal(0))
+            gain = (
+                current_value - purchase_value + total_gain_amount + total_gain_from_sale
+            )
         else:
             # For investments without a ticker or if rate fetch fails,
             # current value is the net of cash flows from transactions.
@@ -149,14 +157,10 @@ def index():
             total_gain_amount = totals.get("total_gain_amount", Decimal(0))
             total_sell_amount = totals.get("total_sell_amount", Decimal(0))
             current_value = purchase_value + total_gain_amount - total_sell_amount
+            gain = total_gain_amount + total_gain_from_sale
 
         # Accumulate totals based on currency
         # Calculate Gain for the investment
-        total_gain_amount = totals.get("total_gain_amount", Decimal(0))
-        total_gain_from_sale = totals.get("total_gain_from_sale", Decimal(0))
-        gain = (
-            current_value - purchase_value + total_gain_amount + total_gain_from_sale
-        )
         if inv.currency == Currency.USD:
             total_purchase_value_usd += purchase_value
             if current_value is not None:
@@ -279,6 +283,54 @@ def index():
             except (ValueError, TypeError, ZeroDivisionError):
                 inr_ticker_xirr = None  # Keep it as None on any error
 
+    # Fetch USD to INR conversion rate
+    usd_to_inr_rate = get_usd_to_inr_rate()
+
+    # Calculate grand total in INR
+    grand_total_in_inr = None
+    if usd_to_inr_rate is not None:
+        total_current_value_usd_in_inr = total_current_value_usd * usd_to_inr_rate
+        grand_total_in_inr = total_current_value_inr + total_current_value_usd_in_inr
+
+    # Fetch historical USD to INR rate for purchase value calculation
+    historical_date = datetime.date(2024, 3, 15)
+    historical_usd_to_inr_rate = get_historical_usd_to_inr_rate(historical_date)
+
+    # Calculate grand total purchase value in INR
+    grand_total_purchase_in_inr = None
+    if historical_usd_to_inr_rate is not None:
+        total_purchase_value_usd_in_inr = (
+            total_purchase_value_usd * historical_usd_to_inr_rate
+        )
+        grand_total_purchase_in_inr = (
+            total_purchase_value_inr + total_purchase_value_usd_in_inr
+        )
+
+    # Calculate a simple overall XIRR
+    overall_xirr = None
+    if grand_total_purchase_in_inr is not None and grand_total_in_inr is not None:
+        if grand_total_purchase_in_inr > 0 and grand_total_in_inr > 0:
+            cash_flows = [
+                (historical_date, -grand_total_purchase_in_inr),
+                (datetime.date.today(), grand_total_in_inr),
+            ]
+            try:
+                dates, values = zip(*cash_flows)
+                result = xirr(dates, values)
+                if (
+                    result is not None
+                    and abs(result) != float("inf")
+                    and result == result
+                ):
+                    overall_xirr = Decimal(result) * 100
+            except (ValueError, TypeError, ZeroDivisionError):
+                overall_xirr = None
+
+    # Calculate grand total gain in INR
+    grand_total_gain_in_inr = None
+    if grand_total_in_inr is not None and grand_total_purchase_in_inr is not None:
+        grand_total_gain_in_inr = grand_total_in_inr - grand_total_purchase_in_inr
+
     # Format totals for display
     total_purchase_usd_str = format_currency_filter(
         total_purchase_value_usd, Currency.USD
@@ -310,6 +362,21 @@ def index():
     total_gain_inr_ticker_str = format_currency_filter(
         total_gain_inr_ticker, Currency.INR
     )
+    grand_total_in_inr_str = (
+        format_currency_filter(grand_total_in_inr, Currency.INR)
+        if grand_total_in_inr is not None
+        else None
+    )
+    grand_total_purchase_in_inr_str = (
+        format_currency_filter(grand_total_purchase_in_inr, Currency.INR)
+        if grand_total_purchase_in_inr is not None
+        else None
+    )
+    grand_total_gain_in_inr_str = (
+        format_currency_filter(grand_total_gain_in_inr, Currency.INR)
+        if grand_total_gain_in_inr is not None
+        else None
+    )
 
     return render_template(
         "index.html",
@@ -326,6 +393,10 @@ def index():
         total_current_inr_ticker_str=total_current_inr_ticker_str,
         total_gain_inr_ticker_str=total_gain_inr_ticker_str,
         inr_ticker_xirr=inr_ticker_xirr,
+        grand_total_in_inr_str=grand_total_in_inr_str,
+        grand_total_purchase_in_inr_str=grand_total_purchase_in_inr_str,
+        grand_total_gain_in_inr_str=grand_total_gain_in_inr_str,
+        overall_xirr=overall_xirr,
     )
 
 
