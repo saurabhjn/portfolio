@@ -186,6 +186,7 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
     total_sell_quantity = Decimal(0)
     total_sell_amount = Decimal(0)
     total_gain_amount = Decimal(0)
+    total_gain_from_sale = Decimal(0)
     net_buy_amount = Decimal(0)
 
     for tx in transactions:
@@ -199,6 +200,8 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
         if tx.sell_quantity is not None and tx.sell_rate is not None:
             total_sell_quantity += tx.sell_quantity
             total_sell_amount += tx.sell_quantity * tx.sell_rate
+        if tx.gain_from_sale is not None:
+            total_gain_from_sale += tx.gain_from_sale
         if tx.gain_amount is not None:
             total_gain_amount += tx.gain_amount
 
@@ -208,6 +211,7 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
         "total_sell_quantity": total_sell_quantity,
         "total_sell_amount": total_sell_amount,
         "total_gain_amount": total_gain_amount,
+        "total_gain_from_sale": total_gain_from_sale,
         "net_buy_amount": net_buy_amount,
     }
 
@@ -235,6 +239,10 @@ def calculate_xirr(
         if tx.sell_date and tx.sell_quantity is not None and tx.sell_rate is not None:
             cash_flows.append((tx.sell_date, tx.sell_quantity * tx.sell_rate))
             total_sell_quantity += tx.sell_quantity
+
+        # Gain is a positive cash flow (money in), e.g., dividends
+        if tx.gain_date and tx.gain_amount is not None:
+            cash_flows.append((tx.gain_date, tx.gain_amount))
 
     # Add current market value of remaining holdings as the final positive cash flow
     remaining_quantity = total_buy_quantity - total_sell_quantity

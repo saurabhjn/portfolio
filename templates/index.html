@@ -16,6 +16,7 @@
                     <th>Current Rate</th>
                     <th>Purchase Value</th>
                     <th>Current Value</th>
+                    <th>Gain</th>
                     <th>XIRR</th>
                     <th>5-Year Return</th>
                     <th>10-Year Return</th>
@@ -54,6 +55,13 @@
                         {% endif %}
                     </td>
                     <td class="text-end">
+                        {% if item.gain is not none %}
+                            {% if item.investment.currency.value == 'USD' %}${% elif item.investment.currency.value == 'INR' %}₹{% endif %}{{ item.gain | format_currency(item.investment.currency) }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
                         {% if item.xirr_value is not none %}
                             {{ "%.2f"|format(item.xirr_value) }}%
                         {% else %}
@@ -82,6 +90,24 @@
             </tbody>
             <tfoot>
                 <tr class="table-group-divider">
+                    <td colspan="4" class="align-bottom"><strong>US Market Investments</strong></td>
+                    <td class="text-end align-bottom">
+                        <strong>${{ total_purchase_usd_ticker_str }}</strong>
+                    </td>
+                    <td class="text-end align-bottom">
+                        <strong>${{ total_current_usd_ticker_str }}</strong>
+                    </td>
+                    <td class="text-end align-bottom">
+                        <strong>${{ total_gain_usd_ticker_str }}</strong>
+                    </td>
+                    <td class="text-end align-bottom">
+                        {% if usd_ticker_xirr is not none %}
+                            <strong>{{ "%.2f"|format(usd_ticker_xirr) }}%</strong>
+                        {% endif %}
+                    </td>
+                    <td colspan="3"></td>
+                </tr>
+                <tr>
                     <td colspan="4" class="align-bottom"><strong>Total USD Investments</strong></td>
                     <td class="text-end align-bottom">
                         <strong>${{ total_purchase_usd_str }}</strong>
@@ -89,7 +115,25 @@
                     <td class="text-end align-bottom">
                         <strong>${{ total_current_usd_str }}</strong>
                     </td>
-                    <td colspan="4"></td>
+                    <td colspan="5"></td>
+                </tr>
+                <tr>
+                    <td colspan="4" class="align-bottom"><strong>India Market Investments</strong></td>
+                    <td class="text-end align-bottom">
+                        <strong>₹{{ total_purchase_inr_ticker_str }}</strong>
+                    </td>
+                    <td class="text-end align-bottom">
+                        <strong>₹{{ total_current_inr_ticker_str }}</strong>
+                    </td>
+                    <td class="text-end align-bottom">
+                        <strong>₹{{ total_gain_inr_ticker_str }}</strong>
+                    </td>
+                    <td class="text-end align-bottom">
+                        {% if inr_ticker_xirr is not none %}
+                            <strong>{{ "%.2f"|format(inr_ticker_xirr) }}%</strong>
+                        {% endif %}
+                    </td>
+                    <td colspan="3"></td>
                 </tr>
                 <tr>
                     <td colspan="4" class="align-bottom"><strong>Total INR Investments</strong></td>
@@ -99,7 +143,7 @@
                     <td class="text-end align-bottom">
                         <strong>₹{{ total_current_inr_str }}</strong>
                     </td>
-                    <td colspan="4"></td>
+                    <td colspan="5"></td>
                 </tr>
             </tfoot>
         </table>

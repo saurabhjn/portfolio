@@ -16,6 +16,7 @@ from model import (
     calculate_transaction_totals,
     calculate_xirr,
 )
+from pyxirr import xirr
 from api_calls import get_current_rate
 from form import InvestmentForm, TransactionForm
 
@@ -116,6 +117,18 @@ def index():
     total_current_value_usd = Decimal(0)
     total_current_value_inr = Decimal(0)
 
+    # New variables for ticker-based USD investments
+    total_purchase_usd_ticker = Decimal(0)
+    total_current_usd_ticker = Decimal(0)
+    total_gain_usd_ticker = Decimal(0)
+    usd_ticker_cash_flows = []
+
+    # New variables for ticker-based INR investments
+    total_purchase_inr_ticker = Decimal(0)
+    total_current_inr_ticker = Decimal(0)
+    total_gain_inr_ticker = Decimal(0)
+    inr_ticker_cash_flows = []
+
     for inv in investments:
         transactions_for_inv = transactions_data.get(inv.investment_name, [])
         totals = calculate_transaction_totals(transactions_for_inv)
@@ -138,6 +151,12 @@ def index():
             current_value = purchase_value + total_gain_amount - total_sell_amount
 
         # Accumulate totals based on currency
+        # Calculate Gain for the investment
+        total_gain_amount = totals.get("total_gain_amount", Decimal(0))
+        total_gain_from_sale = totals.get("total_gain_from_sale", Decimal(0))
+        gain = (
+            current_value - purchase_value + total_gain_amount + total_gain_from_sale
+        )
         if inv.currency == Currency.USD:
             total_purchase_value_usd += purchase_value
             if current_value is not None:
@@ -146,6 +165,46 @@ def index():
             total_purchase_value_inr += purchase_value
             if current_value is not None:
                 total_current_value_inr += current_value
+
+        # If it's a USD investment with a ticker, add to the market totals
+        if inv.currency == Currency.USD and inv.ticker:
+            total_purchase_usd_ticker += purchase_value
+            if current_value is not None:
+                total_current_usd_ticker += current_value
+            total_gain_usd_ticker += gain
+
+            # Accumulate cash flows for combined XIRR calculation
+            for tx in transactions_for_inv:
+                if tx.buy_date and tx.buy_quantity is not None and tx.buy_rate is not None:
+                    usd_ticker_cash_flows.append(
+                        (tx.buy_date, -(tx.buy_quantity * tx.buy_rate))
+                    )
+                if tx.sell_date and tx.sell_quantity is not None and tx.sell_rate is not None:
+                    usd_ticker_cash_flows.append(
+                        (tx.sell_date, tx.sell_quantity * tx.sell_rate)
+                    )
+                if tx.gain_date and tx.gain_amount is not None:
+                    usd_ticker_cash_flows.append((tx.gain_date, tx.gain_amount))
+
+        # If it's an INR investment with a ticker, add to the market totals
+        if inv.currency == Currency.INR and inv.ticker:
+            total_purchase_inr_ticker += purchase_value
+            if current_value is not None:
+                total_current_inr_ticker += current_value
+            total_gain_inr_ticker += gain
+
+            # Accumulate cash flows for combined XIRR calculation
+            for tx in transactions_for_inv:
+                if tx.buy_date and tx.buy_quantity is not None and tx.buy_rate is not None:
+                    inr_ticker_cash_flows.append(
+                        (tx.buy_date, -(tx.buy_quantity * tx.buy_rate))
+                    )
+                if tx.sell_date and tx.sell_quantity is not None and tx.sell_rate is not None:
+                    inr_ticker_cash_flows.append(
+                        (tx.sell_date, tx.sell_quantity * tx.sell_rate)
+                    )
+                if tx.gain_date and tx.gain_amount is not None:
+                    inr_ticker_cash_flows.append((tx.gain_date, tx.gain_amount))
 
         # Calculate XIRR for the investment
         xirr_value = calculate_xirr(
@@ -160,8 +219,65 @@ def index():
                 "purchase_value": purchase_value,
                 "current_value": current_value,
                 "xirr_value": xirr_value,
+                "gain": gain,
             }
         )
+
+    # Calculate combined XIRR for all ticker-based USD investments
+    usd_ticker_xirr = None
+    if usd_ticker_cash_flows:
+        # Add the final total current value as the last positive cash flow
+        if total_current_usd_ticker > 0:
+            usd_ticker_cash_flows.append(
+                (datetime.date.today(), total_current_usd_ticker)
+            )
+
+        if len(usd_ticker_cash_flows) >= 2:
+            try:
+                # Sort by date and separate into two lists for the xirr function
+                usd_ticker_cash_flows.sort(key=lambda item: item[0])
+                dates, values = zip(*usd_ticker_cash_flows)
+
+                # XIRR requires at least one positive and one negative cash flow
+                if any(v > 0 for v in values) and any(v < 0 for v in values):
+                    result = xirr(dates, values)
+                    # The library can return NaN or infinity on calculation errors
+                    if (
+                        result is not None
+                        and abs(result) != float("inf")
+                        and result == result
+                    ):
+                        usd_ticker_xirr = Decimal(result) * 100
+            except (ValueError, TypeError, ZeroDivisionError):
+                usd_ticker_xirr = None  # Keep it as None on any error
+
+    # Calculate combined XIRR for all ticker-based INR investments
+    inr_ticker_xirr = None
+    if inr_ticker_cash_flows:
+        # Add the final total current value as the last positive cash flow
+        if total_current_inr_ticker > 0:
+            inr_ticker_cash_flows.append(
+                (datetime.date.today(), total_current_inr_ticker)
+            )
+
+        if len(inr_ticker_cash_flows) >= 2:
+            try:
+                # Sort by date and separate into two lists for the xirr function
+                inr_ticker_cash_flows.sort(key=lambda item: item[0])
+                dates, values = zip(*inr_ticker_cash_flows)
+
+                # XIRR requires at least one positive and one negative cash flow
+                if any(v > 0 for v in values) and any(v < 0 for v in values):
+                    result = xirr(dates, values)
+                    # The library can return NaN or infinity on calculation errors
+                    if (
+                        result is not None
+                        and abs(result) != float("inf")
+                        and result == result
+                    ):
+                        inr_ticker_xirr = Decimal(result) * 100
+            except (ValueError, TypeError, ZeroDivisionError):
+                inr_ticker_xirr = None  # Keep it as None on any error
 
     # Format totals for display
     total_purchase_usd_str = format_currency_filter(
@@ -176,6 +292,24 @@ def index():
     total_current_inr_str = format_currency_filter(
         total_current_value_inr, Currency.INR
     )
+    total_purchase_usd_ticker_str = format_currency_filter(
+        total_purchase_usd_ticker, Currency.USD
+    )
+    total_current_usd_ticker_str = format_currency_filter(
+        total_current_usd_ticker, Currency.USD
+    )
+    total_purchase_inr_ticker_str = format_currency_filter(
+        total_purchase_inr_ticker, Currency.INR
+    )
+    total_current_inr_ticker_str = format_currency_filter(
+        total_current_inr_ticker, Currency.INR
+    )
+    total_gain_usd_ticker_str = format_currency_filter(
+        total_gain_usd_ticker, Currency.USD
+    )
+    total_gain_inr_ticker_str = format_currency_filter(
+        total_gain_inr_ticker, Currency.INR
+    )
 
     return render_template(
         "index.html",
@@ -184,6 +318,14 @@ def index():
         total_purchase_inr_str=total_purchase_inr_str,
         total_current_usd_str=total_current_usd_str,
         total_current_inr_str=total_current_inr_str,
+        total_purchase_usd_ticker_str=total_purchase_usd_ticker_str,
+        total_current_usd_ticker_str=total_current_usd_ticker_str,
+        total_gain_usd_ticker_str=total_gain_usd_ticker_str,
+        usd_ticker_xirr=usd_ticker_xirr,
+        total_purchase_inr_ticker_str=total_purchase_inr_ticker_str,
+        total_current_inr_ticker_str=total_current_inr_ticker_str,
+        total_gain_inr_ticker_str=total_gain_inr_ticker_str,
+        inr_ticker_xirr=inr_ticker_xirr,
     )
 
 
