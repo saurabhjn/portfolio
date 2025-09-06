@@ -4,6 +4,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, g
 import datetime
 from decimal import Decimal, ROUND_DOWN
 from flask_bootstrap import Bootstrap5
+from flask_basicauth import BasicAuth
 from model import (
     Investment,
     Currency,
@@ -30,6 +31,15 @@ app = Flask(__name__)
 # Flask-WTF requires a secret key for CSRF protection.
 # It's good practice to set this from an environment variable.
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "a-default-secret-key-for-dev")
+
+# --- Basic Auth Configuration ---
+# Read credentials from environment variables with defaults for development.
+# For production, always set these environment variables.
+app.config["BASIC_AUTH_USERNAME"] = os.environ.get("PORTFOLIO_USERNAME", "admin")
+app.config["BASIC_AUTH_PASSWORD"] = os.environ.get("PORTFOLIO_PASSWORD", "secret")
+app.config["BASIC_AUTH_FORCE"] = True  # Protect all routes by default
+basic_auth = BasicAuth(app)
+
 bootstrap = Bootstrap5(app)
 
 
