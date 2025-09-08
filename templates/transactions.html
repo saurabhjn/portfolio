@@ -84,34 +84,113 @@
                     <td class="text-end">
                         <strong>{{ (total_buy_quantity - total_sell_quantity) | format_quantity }}</strong>
                     </td>
-                    <td class="text-end">
+                    <td colspan=4></td>
+                    <td>
                         <strong>
-                            Purchase Value:
-                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ net_buy_amount | format_currency(investment.currency) }}
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
+                            {{ total_gain_from_sale | format_currency(investment.currency) }}
                         </strong>
                     </td>
-                    {# Empty cells to span the rest of the columns #}
-                    <td colspan="8" class="align-middle">
+                    <td></td>
+                    <td>
+                        <strong>
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
+                            {{ total_gain_amount | format_currency(investment.currency) }}
+                        </strong>
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+            <p>
                         {% if xirr_value is not none %}
-                            <strong class="ms-4">
+                            <strong>
                                 XIRR: {{ "%.2f"|format(xirr_value) }}%
                             </strong>
+            </p>
+            <p>
                         {% endif %}
-                        <strong class="ms-4">
-                            Current Value:
-                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
-                            {{ current_value | format_currency(investment.currency) }}
-                        </strong>
                         {% if current_rate is not none %}
-                            <strong class="ms-4">
+                            <strong>
                                 Current Rate:
                                 {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
                                 {{ current_rate | format_currency(investment.currency) }}
                             </strong>
-                        {% endif %}
+                            {% endif %}
+            </p>
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th></th>
+                    <th class="text-center">Quantity</th>
+                    <th class="text-center">Purchase Value</th>
+                    <th class="text-center">Current Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>
+                        <strong>
+                            Current Holdings
+                        </strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>{{ (total_buy_quantity - total_sell_quantity) | format_quantity }}</strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ net_buy_amount | format_currency(investment.currency) }}
+                        </strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
+                            {{ current_value | format_currency(investment.currency) }}
+                        </strong>
                     </td>
                 </tr>
-            </tfoot>
+                <tr>
+                    <td>
+                        <strong>
+                            Original Holdings
+                        </strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>{{ (total_buy_quantity) | format_quantity }}</strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ total_buy_amount | format_currency(investment.currency) }}
+                        </strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
+                            {{ (current_rate * total_buy_quantity) | format_currency(investment.currency) }}
+                        </strong>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <strong>
+                            Sale
+                        </strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>{{ (total_sell_quantity) | format_quantity }}</strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}{{ total_sell_amount | format_currency(investment.currency) }}
+                        </strong>
+                    </td>
+                    <td class="text-end">
+                        <strong>
+                            {% if investment.currency.value == 'USD' %}${% elif investment.currency.value == 'INR' %}₹{% endif %}
+                            {{ (total_sell_amount - current_rate * total_buy_quantity + current_value) | format_currency(investment.currency) }}
+                        </strong>
+                    </td>
+                </tr>
+            </tbody>
         </table>
     {% else %}
         <div class="alert alert-info" role="alert">
