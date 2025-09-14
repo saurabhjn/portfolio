@@ -499,7 +499,7 @@ def view_transactions(investment_name):
         total_gain_from_sale=metrics["totals"]["total_gain_from_sale"],
         net_buy_amount=metrics["totals"]["net_buy_amount"],
         current_value=metrics["current_value"],
-        current_rate=metrics["current_rate"],
+        current_rate=metrics["current_rate"] if metrics["current_rate"] else 0,
     )
 
 
