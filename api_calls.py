@@ -62,7 +62,7 @@ ALPHA_VANTAGE_API_KEY = load_api_key(CONFIG_FILE)
 rate_cache = load_rate_cache(RATE_CACHE_FILE)
 
 
-def get_current_rate(ticker: str) -> Optional[Decimal]:
+def get_current_rate(ticker: str, force_refresh: bool = False) -> Optional[Decimal]:
     """
     Fetches the latest price for a given ticker from various sources,
     with a 30-minute cache.
@@ -73,9 +73,9 @@ def get_current_rate(ticker: str) -> Optional[Decimal]:
     now = datetime.datetime.now()
 
     # Check for a fresh cache hit first
-    if ticker in rate_cache:
+    if ticker in rate_cache and not force_refresh:
         cached_time, cached_rate = rate_cache[ticker]
-        if now - cached_time < datetime.timedelta(minutes=60):
+        if now - cached_time < datetime.timedelta(days=2):
             print(f"Cache hit for {ticker}. Returning cached rate.")
             return cached_rate
 

@@ -1,5 +1,6 @@
 import os
 from typing import List, Optional
+
 from flask import Flask, render_template, redirect, url_for, flash, request, g
 import datetime
 from decimal import Decimal, ROUND_DOWN
@@ -15,10 +16,12 @@ from model import (
     save_transactions_to_json,
     calculate_transaction_totals,
 )
+
 from api_calls import (
     get_current_rate,
     get_usd_to_inr_rate,
     get_historical_usd_to_inr_rate,
+    rate_cache,
 )
 from form import InvestmentForm, TransactionForm
 from xirr import (
@@ -41,6 +44,11 @@ app.config["BASIC_AUTH_FORCE"] = True  # Protect all routes by default
 basic_auth = BasicAuth(app)
 
 bootstrap = Bootstrap5(app)
+
+
+@app.context_processor
+def inject_now():
+    return {'now': datetime.datetime.utcnow}
 
 
 DATA_DIR = "data"
@@ -74,7 +82,9 @@ def _calculate_investment_metrics(
     remaining_quantity = totals["total_buy_quantity"] - totals["total_sell_quantity"]
     purchase_value = totals["net_buy_amount"]
 
-    current_rate = get_current_rate(investment.ticker) if investment.ticker else None
+    current_rate = (
+        get_current_rate(investment.ticker, g.get("force_refresh", False)) if investment.ticker else None
+    )
 
     total_gain_amount = totals.get("total_gain_amount", Decimal(0))
     total_gain_from_sale = totals.get("total_gain_from_sale", Decimal(0))
@@ -361,6 +371,27 @@ def index():
         else None
     )
 
+    force_refresh = request.args.get("force_refresh") == "true"
+
+    # Set the force_refresh value in the global context
+    # Note: flask.g is not the place to modify global application state.
+    # It may be better to use a session variable
+    g.force_refresh = force_refresh
+
+    # Find the age of the oldest cached rate
+    oldest_cache_age = None
+    if rate_cache:
+        oldest_timestamp = min(
+            timestamp for ticker, (timestamp, _) in rate_cache.items()
+            if not ticker.startswith("USD_INR_RATE_")
+        )
+        now = datetime.datetime.now()
+        age = now - oldest_timestamp
+        oldest_cache_age = (
+            f"{age.days} days, {age.seconds // 3600} hours, {(age.seconds // 60) % 60} minutes"
+        )
+
+
     return render_template(
         "index.html",
         portfolio_data=portfolio_data,
@@ -380,6 +411,7 @@ def index():
         grand_total_purchase_in_inr_str=grand_total_purchase_in_inr_str,
         grand_total_gain_in_inr_str=grand_total_gain_in_inr_str,
         overall_xirr=overall_xirr,
+        oldest_cache_age=oldest_cache_age,
     )
 
 
@@ -652,4 +684,11 @@ def reload_data():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Create the data directory if it doesn't exist
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
+    #touch investment.json and transaction.json if they don't exist
+    if not os.path.exists(DATA_FILE):
+        open(DATA_FILE, 'a').close()
+    if not os.path.exists(TRANSACTIONS_FILE):
+        app.run(debug=True)
