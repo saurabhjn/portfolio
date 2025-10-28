@@ -78,3 +78,5 @@ dmypy.json
 
 # User-generated data
 data/
+
+nohup.out

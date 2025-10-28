@@ -65,7 +65,7 @@ rate_cache = load_rate_cache(RATE_CACHE_FILE)
 def get_current_rate(ticker: str, force_refresh: bool = False) -> Optional[Decimal]:
     """
     Fetches the latest price for a given ticker from various sources,
-    with a 30-minute cache.
+    with a 12-hour cache.
     """
     if not ticker:
         return None
@@ -75,7 +75,7 @@ def get_current_rate(ticker: str, force_refresh: bool = False) -> Optional[Decim
     # Check for a fresh cache hit first
     if ticker in rate_cache and not force_refresh:
         cached_time, cached_rate = rate_cache[ticker]
-        if now - cached_time < datetime.timedelta(days=2):
+        if now - cached_time < datetime.timedelta(hours=12):
             print(f"Cache hit for {ticker}. Returning cached rate.")
             return cached_rate
 
