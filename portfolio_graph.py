@@ -60,14 +60,15 @@ def get_historical_nav(isin: str, date: datetime.date) -> Optional[Decimal]:
 def get_historical_usd_inr_rate(date: datetime.date) -> Optional[Decimal]:
     """Get historical USD to INR rate with caching."""
     from api_calls import rate_cache, save_rate_cache, RATE_CACHE_FILE
+    import sys
     
     cache_key = f"USD_INR_RATE_{date.isoformat()}"
     
     if cache_key in rate_cache:
-        print(f"[CACHE HIT] USD/INR rate for {date}: {rate_cache[cache_key][1]}")
+        print(f"[CACHE HIT] USD/INR rate for {date}: {rate_cache[cache_key][1]}", flush=True)
         return rate_cache[cache_key][1]
     
-    print(f"[API CALL] Fetching USD/INR rate for {date}...")
+    print(f"[API CALL] Fetching USD/INR rate for {date}...", flush=True)
     try:
         url = f"https://api.frankfurter.app/{date.strftime('%Y-%m-%d')}?from=USD&to=INR"
         response = requests.get(url, timeout=10)
@@ -77,12 +78,12 @@ def get_historical_usd_inr_rate(date: datetime.date) -> Optional[Decimal]:
             rate_decimal = Decimal(str(rate))
             rate_cache[cache_key] = (datetime.datetime.now(), rate_decimal)
             save_rate_cache(RATE_CACHE_FILE, rate_cache)
-            print(f"[API SUCCESS] USD/INR on {date}: {rate_decimal}")
+            print(f"[API SUCCESS] USD/INR on {date}: {rate_decimal}", flush=True)
             return rate_decimal
-        print(f"[API FAILED] No USD/INR rate for {date}")
+        print(f"[API FAILED] No USD/INR rate for {date}", flush=True)
         return None
     except Exception as e:
-        print(f"[API ERROR] USD/INR on {date}: {e}")
+        print(f"[API ERROR] USD/INR on {date}: {e}", flush=True)
         return None
 
 
@@ -104,6 +105,7 @@ def calculate_portfolio_value_on_date(
         
         holdings = Decimal(0)
         cost_basis = Decimal(0)
+        total_gains = Decimal(0)
         
         for transaction in transactions:
             if transaction.buy_date and transaction.buy_date <= target_date:
@@ -116,8 +118,12 @@ def calculate_portfolio_value_on_date(
                     holdings -= transaction.sell_quantity
                     if transaction.buy_rate:
                         cost_basis -= transaction.sell_quantity * transaction.buy_rate
+            
+            if transaction.gain_date and transaction.gain_date <= target_date:
+                if transaction.gain_amount:
+                    total_gains += transaction.gain_amount
         
-        if holdings > 0:
+        if holdings > 0 or total_gains > 0:
             if is_today:
                 rate = current_rates.get(investment.investment_name)
             elif investment.ticker:
@@ -128,7 +134,7 @@ def calculate_portfolio_value_on_date(
             else:
                 rate = None
             
-            market_value = holdings * rate if rate else cost_basis
+            market_value = (holdings * rate if rate else cost_basis) + total_gains
             
             if investment.currency == Currency.USD:
                 total_usd += market_value
@@ -198,10 +204,12 @@ def generate_portfolio_timeline(
         return []  # No transactions, no graph
     
     if not start_date:
-        start_date = max(min(all_dates), datetime.date(2021, 10, 1))  # Start from Oct 2021
+        start_date = max(min(all_dates), datetime.date(2022, 9, 1))  # Start from Sep 2022
     
     if not end_date:
         end_date = datetime.date.today()
+    
+    print(f"[GRAPH] Start date: {start_date}, End date (today): {end_date}")
     
     # Create monthly snapshots plus transaction dates
     significant_dates = set(all_dates)
@@ -228,6 +236,8 @@ def generate_portfolio_timeline(
             investments, transactions_data, date, current_rates, is_today
         )
         
+
+        
         if total_usd == 0 and total_inr == 0:
             continue
         
@@ -251,12 +261,11 @@ def generate_portfolio_timeline(
     return snapshots
 
 
-def prepare_chart_data(snapshots: List[PortfolioSnapshot]) -> Dict:
+def prepare_chart_data(snapshots: List[PortfolioSnapshot], usd_to_inr_rate: Decimal) -> Dict:
     """Prepare data for Chart.js visualization."""
     
     # Filter to quarterly snapshots + investment events to reduce clutter
     filtered_snapshots = []
-    usd_to_inr_rate = Decimal('83')
     
     for i, snapshot in enumerate(snapshots):
         # Always include investment events
@@ -271,9 +280,23 @@ def prepare_chart_data(snapshots: List[PortfolioSnapshot]) -> Dict:
         'invested_amount': []
     }
     
-    for snapshot in filtered_snapshots:
-        total_inr = snapshot.total_value_inr + (snapshot.total_value_usd * usd_to_inr_rate)
-        cost_inr = snapshot.cost_basis_inr + (snapshot.cost_basis_usd * usd_to_inr_rate)
+    # Use same historical rate as home page (March 15, 2024)
+    purchase_rate = get_historical_usd_inr_rate(datetime.date(2024, 3, 15))
+    if not purchase_rate:
+        purchase_rate = Decimal('82.83')
+    
+    for i, snapshot in enumerate(filtered_snapshots):
+        # Get historical USD/INR rate for this date
+        historical_rate = get_historical_usd_inr_rate(snapshot.date)
+        if not historical_rate:
+            historical_rate = usd_to_inr_rate
+        
+        total_inr = snapshot.total_value_inr + (snapshot.total_value_usd * historical_rate)
+        cost_inr = snapshot.cost_basis_inr + (snapshot.cost_basis_usd * purchase_rate)
+        
+        if i == len(filtered_snapshots) - 1:
+            print(f"[LAST] date={snapshot.date}, cost_basis_usd={snapshot.cost_basis_usd}, cost_basis_inr={snapshot.cost_basis_inr}", flush=True)
+            print(f"[LAST] cost_inr = {snapshot.cost_basis_inr} + ({snapshot.cost_basis_usd} * {purchase_rate}) = {cost_inr}", flush=True)
         
         chart_data['total_value'].append({
             'x': snapshot.date.strftime('%Y-%m-%d'),

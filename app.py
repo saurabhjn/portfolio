@@ -701,6 +701,11 @@ def portfolio_graph():
                 if rate:
                     current_rates[inv.investment_name] = rate
         
+        # Get USD to INR rate
+        usd_to_inr_rate = get_usd_to_inr_rate()
+        if not usd_to_inr_rate:
+            usd_to_inr_rate = Decimal('83')
+        
         # Generate portfolio timeline
         snapshots = generate_portfolio_timeline(investments, transactions_data, current_rates)
         
@@ -709,7 +714,7 @@ def portfolio_graph():
             return redirect(url_for("index"))
         
         # Prepare data for Chart.js
-        chart_data = prepare_chart_data(snapshots)
+        chart_data = prepare_chart_data(snapshots, usd_to_inr_rate)
         
         return render_template("portfolio_graph.html", chart_data=chart_data)
     except Exception as e:
