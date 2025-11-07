@@ -29,10 +29,8 @@ def get_historical_stock_price(ticker: str, date: datetime.date) -> Optional[Dec
     cache_key = f"HIST_{ticker}_{date.isoformat()}"
     
     if cache_key in rate_cache:
-        print(f"[CACHE HIT] Historical price for {ticker} on {date}: {rate_cache[cache_key][1]}")
         return rate_cache[cache_key][1]
     
-    print(f"[API CALL] Fetching historical price for {ticker} on {date}...")
     try:
         stock = yf.Ticker(ticker)
         start = date - datetime.timedelta(days=7)
@@ -44,12 +42,9 @@ def get_historical_stock_price(ticker: str, date: datetime.date) -> Optional[Dec
             price = Decimal(str(closest))
             rate_cache[cache_key] = (datetime.datetime.now(), price)
             save_rate_cache(RATE_CACHE_FILE, rate_cache)
-            print(f"[API SUCCESS] {ticker} on {date}: {price}")
             return price
-        print(f"[API FAILED] No data for {ticker} on {date}")
         return None
     except Exception as e:
-        print(f"[API ERROR] {ticker} on {date}: {e}")
         return None
 
 
@@ -73,10 +68,8 @@ def get_historical_usd_inr_rate(date: datetime.date) -> Optional[Decimal]:
     cache_key = f"USD_INR_RATE_{date.isoformat()}"
     
     if cache_key in rate_cache:
-        print(f"[CACHE HIT] USD/INR rate for {date}: {rate_cache[cache_key][1]}", flush=True)
         return rate_cache[cache_key][1]
     
-    print(f"[API CALL] Fetching USD/INR rate for {date}...", flush=True)
     try:
         url = f"https://api.frankfurter.app/{date.strftime('%Y-%m-%d')}?from=USD&to=INR"
         response = requests.get(url, timeout=10)
@@ -86,12 +79,9 @@ def get_historical_usd_inr_rate(date: datetime.date) -> Optional[Decimal]:
             rate_decimal = Decimal(str(rate))
             rate_cache[cache_key] = (datetime.datetime.now(), rate_decimal)
             save_rate_cache(RATE_CACHE_FILE, rate_cache)
-            print(f"[API SUCCESS] USD/INR on {date}: {rate_decimal}", flush=True)
             return rate_decimal
-        print(f"[API FAILED] No USD/INR rate for {date}", flush=True)
         return None
     except Exception as e:
-        print(f"[API ERROR] USD/INR on {date}: {e}", flush=True)
         return None
 
 
@@ -218,7 +208,7 @@ def generate_portfolio_timeline(
     if not end_date:
         end_date = datetime.date.today()
     
-    print(f"[GRAPH] Start date: {start_date}, End date (today): {end_date}")
+
     
     # Create monthly snapshots plus transaction dates
     significant_dates = set(all_dates)
@@ -295,17 +285,16 @@ def prepare_chart_data(snapshots: List[PortfolioSnapshot], usd_to_inr_rate: Deci
         purchase_rate = Decimal('82.83')
     
     for i, snapshot in enumerate(filtered_snapshots):
-        # Get historical USD/INR rate for this date
-        historical_rate = get_historical_usd_inr_rate(snapshot.date)
-        if not historical_rate:
+        # Use current rate for today, historical for past dates
+        if snapshot.date == datetime.date.today():
             historical_rate = usd_to_inr_rate
+        else:
+            historical_rate = get_historical_usd_inr_rate(snapshot.date)
+            if not historical_rate:
+                historical_rate = usd_to_inr_rate
         
         total_inr = snapshot.total_value_inr + (snapshot.total_value_usd * historical_rate)
         cost_inr = snapshot.cost_basis_inr + (snapshot.cost_basis_usd * purchase_rate)
-        
-        if i == len(filtered_snapshots) - 1:
-            print(f"[LAST] date={snapshot.date}, cost_basis_usd={snapshot.cost_basis_usd}, cost_basis_inr={snapshot.cost_basis_inr}", flush=True)
-            print(f"[LAST] cost_inr = {snapshot.cost_basis_inr} + ({snapshot.cost_basis_usd} * {purchase_rate}) = {cost_inr}", flush=True)
         
         chart_data['total_value'].append({
             'x': snapshot.date.strftime('%Y-%m-%d'),

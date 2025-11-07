@@ -94,9 +94,9 @@ def _calculate_investment_metrics(
     total_gain_from_sale = totals.get("total_gain_from_sale", Decimal(0))
 
     if current_rate is not None:
-        current_value = remaining_quantity * current_rate
-        gain = current_value - purchase_value + total_gain_amount + total_gain_from_sale
-        current_value_for_xirr = current_value
+        current_value = remaining_quantity * current_rate + total_gain_amount
+        gain = current_value - purchase_value + total_gain_from_sale
+        current_value_for_xirr = current_value - total_gain_amount
     else:
         # For investments without a ticker or if rate fetch fails
         total_sell_amount = totals.get("total_sell_amount", Decimal(0))
