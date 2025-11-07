@@ -48,18 +48,20 @@ def get_current_rate(ticker: str, force_refresh: bool = False) -> Optional[Decim
     if not ticker:
         return None
 
-    if ticker.startswith("IN"):  # For Indian Mutual Funds (ISINs)
+    # Check if it's a mutual fund scheme code (6-digit number)
+    if ticker.isdigit() and len(ticker) == 6:
         try:
-            url = f"https://mf.captnemo.in/nav/{ticker}"
+            url = f"https://api.mfapi.in/mf/{ticker}/latest"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
-            nav_str = data.get("nav")
-            if nav_str is not None:
-                return Decimal(str(nav_str))
+            if data.get("status") == "SUCCESS" and data.get("data"):
+                nav_str = data["data"][0].get("nav")
+                if nav_str:
+                    return Decimal(str(nav_str))
         except Exception as e:
-            print(f"captnemo.in failed for {ticker}: {e}")
-    else:  # Use yfinance for US stocks
+            print(f"MFAPI failed for {ticker}: {e}")
+    else:  # Use yfinance for stocks (US and Indian)
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period="1d")

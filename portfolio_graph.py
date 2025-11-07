@@ -53,8 +53,16 @@ def get_historical_stock_price(ticker: str, date: datetime.date) -> Optional[Dec
         return None
 
 
-def get_historical_nav(isin: str, date: datetime.date) -> Optional[Decimal]:
-    """Get historical NAV for Indian mutual fund - not supported, returns None."""
+def get_historical_nav(ticker: str, date: datetime.date) -> Optional[Decimal]:
+    """Get historical NAV for Indian mutual fund using scheme code."""
+    from api_calls import rate_cache, save_rate_cache, RATE_CACHE_FILE
+    
+    cache_key = f"HIST_{ticker}_{date.isoformat()}"
+    
+    if cache_key in rate_cache:
+        return rate_cache[cache_key][1]
+    
+    # MFAPI doesn't support historical data, return None
     return None
 
 def get_historical_usd_inr_rate(date: datetime.date) -> Optional[Decimal]:
@@ -127,7 +135,8 @@ def calculate_portfolio_value_on_date(
             if is_today:
                 rate = current_rates.get(investment.investment_name)
             elif investment.ticker:
-                if investment.ticker.startswith('IN'):
+                # Check if it's a mutual fund (6-digit scheme code)
+                if investment.ticker.isdigit() and len(investment.ticker) == 6:
                     rate = get_historical_nav(investment.ticker, target_date)
                 else:
                     rate = get_historical_stock_price(investment.ticker, target_date)
