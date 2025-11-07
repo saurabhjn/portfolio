@@ -4,3 +4,4 @@ bootstrap-flask
 Flask-BasicAuth
 requests
 pyxirr
+yfinance

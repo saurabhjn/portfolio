@@ -29,6 +29,10 @@ from xirr import (
     calculate_xirr_from_cash_flows,
     generate_cash_flows_from_transactions,
 )
+from portfolio_graph import (
+    generate_portfolio_timeline,
+    prepare_chart_data,
+)
 
 app = Flask(__name__)
 # Flask-WTF requires a secret key for CSRF protection.
@@ -681,6 +685,36 @@ def reload_data():
     transactions_data = load_transactions_from_json(TRANSACTIONS_FILE)
     flash("Data reloaded successfully from disk.", "success")
     return redirect(url_for("index"))
+
+
+@app.route("/portfolio-graph")
+def portfolio_graph():
+    """Displays a graph showing portfolio growth over time."""
+    try:
+        from api_calls import get_current_rate
+        
+        # Get current rates for all investments
+        current_rates = {}
+        for inv in investments:
+            if inv.ticker:
+                rate = get_current_rate(inv.ticker)
+                if rate:
+                    current_rates[inv.investment_name] = rate
+        
+        # Generate portfolio timeline
+        snapshots = generate_portfolio_timeline(investments, transactions_data, current_rates)
+        
+        if not snapshots:
+            flash("No portfolio data available for graphing.", "warning")
+            return redirect(url_for("index"))
+        
+        # Prepare data for Chart.js
+        chart_data = prepare_chart_data(snapshots)
+        
+        return render_template("portfolio_graph.html", chart_data=chart_data)
+    except Exception as e:
+        flash(f"Error generating portfolio graph: {str(e)}", "danger")
+        return redirect(url_for("index"))
 
 
 if __name__ == "__main__":
