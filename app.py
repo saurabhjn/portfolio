@@ -375,27 +375,6 @@ def index():
         else None
     )
 
-    force_refresh = request.args.get("force_refresh") == "true"
-
-    # Set the force_refresh value in the global context
-    # Note: flask.g is not the place to modify global application state.
-    # It may be better to use a session variable
-    g.force_refresh = force_refresh
-
-    # Find the age of the oldest cached rate
-    oldest_cache_age = None
-    if rate_cache:
-        oldest_timestamp = min(
-            timestamp for ticker, (timestamp, _) in rate_cache.items()
-            if not ticker.startswith("USD_INR_RATE_")
-        )
-        now = datetime.datetime.now()
-        age = now - oldest_timestamp
-        oldest_cache_age = (
-            f"{age.days} days, {age.seconds // 3600} hours, {(age.seconds // 60) % 60} minutes"
-        )
-
-
     return render_template(
         "index.html",
         portfolio_data=portfolio_data,
@@ -415,7 +394,6 @@ def index():
         grand_total_purchase_in_inr_str=grand_total_purchase_in_inr_str,
         grand_total_gain_in_inr_str=grand_total_gain_in_inr_str,
         overall_xirr=overall_xirr,
-        oldest_cache_age=oldest_cache_age,
     )
 
 

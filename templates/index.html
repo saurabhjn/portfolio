@@ -9,18 +9,7 @@
         </div>
     </div>
 
-    {% if oldest_cache_age %}
-
-        <div class="mb-3">
-            <small class="text-muted">Oldest Rate Cached: {{ oldest_cache_age }} ago</small>
-        </div>
-    {% endif %}
-    
     {% if portfolio_data %}
-    <div class="mb-3">
-        <a href="{{ url_for('index', force_refresh=True) }}" class="btn btn-warning">Force Refresh Rates</a>
-    </div>
-
         <div class="d-flex justify-content-start align-items-center mb-2" id="toggle-small-investments-container" style="display: none;">
             <button id="toggle-small-investments-btn" class="btn btn-sm btn-outline-secondary py-0 px-1" type="button">+</button>
             <span class="ms-2 small-investments-toggle-text"></span>
