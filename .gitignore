@@ -80,3 +80,7 @@ dmypy.json
 data/
 
 nohup.out
+
+# Local run scripts with secrets
+run
+work

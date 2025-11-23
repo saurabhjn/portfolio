@@ -11,6 +11,12 @@
             <div class="card">
                 <div class="card-header">
                     <h5 class="card-title mb-0">Investment Growth Timeline</h5>
+                    <div class="btn-group mt-2 mb-2" role="group">
+                        <a href="{{ url_for('portfolio_graph', range='3m') }}" class="btn btn-sm {% if selected_range == '3m' %}btn-primary{% else %}btn-outline-primary{% endif %}">3 Months</a>
+                        <a href="{{ url_for('portfolio_graph', range='6m') }}" class="btn btn-sm {% if selected_range == '6m' %}btn-primary{% else %}btn-outline-primary{% endif %}">6 Months</a>
+                        <a href="{{ url_for('portfolio_graph', range='1y') }}" class="btn btn-sm {% if selected_range == '1y' %}btn-primary{% else %}btn-outline-primary{% endif %}">1 Year</a>
+                        <a href="{{ url_for('portfolio_graph', range='all') }}" class="btn btn-sm {% if selected_range == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}">All Time</a>
+                    </div>
                     <div class="alert alert-info mt-2 mb-2" role="alert">
                         <strong>How to read this graph:</strong><br>
                         <span style="color: #28a745;">●</span> <strong>Green area</strong> = Total portfolio value (your money + market gains)<br>

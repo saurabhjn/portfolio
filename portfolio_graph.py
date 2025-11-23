@@ -210,21 +210,12 @@ def generate_portfolio_timeline(
     
 
     
-    # Create monthly snapshots plus transaction dates
-    significant_dates = set(all_dates)
-    
-    # Add monthly snapshots
-    current_date = start_date.replace(day=1)  # Start of month
+    # Generate daily snapshots
+    sorted_dates = []
+    current_date = start_date
     while current_date <= end_date:
-        significant_dates.add(current_date)
-        # Move to next month
-        if current_date.month == 12:
-            current_date = current_date.replace(year=current_date.year + 1, month=1)
-        else:
-            current_date = current_date.replace(month=current_date.month + 1)
-    
-    # Sort dates and filter to range
-    sorted_dates = sorted([d for d in significant_dates if start_date <= d <= end_date])
+        sorted_dates.append(current_date)
+        current_date += datetime.timedelta(days=1)
     
     # Generate snapshots
     snapshots = []
@@ -234,11 +225,6 @@ def generate_portfolio_timeline(
         total_usd, total_inr, cost_usd, cost_inr = calculate_portfolio_value_on_date(
             investments, transactions_data, date, current_rates, is_today
         )
-        
-
-        
-        if total_usd == 0 and total_inr == 0:
-            continue
         
         new_usd, new_inr, is_new_investment, event_desc = detect_new_investments(
             investments, transactions_data, date
@@ -263,17 +249,6 @@ def generate_portfolio_timeline(
 def prepare_chart_data(snapshots: List[PortfolioSnapshot], usd_to_inr_rate: Decimal) -> Dict:
     """Prepare data for Chart.js visualization."""
     
-    # Filter to quarterly snapshots + investment events to reduce clutter
-    filtered_snapshots = []
-    
-    for i, snapshot in enumerate(snapshots):
-        # Always include investment events
-        if snapshot.is_new_investment:
-            filtered_snapshots.append(snapshot)
-        # Include quarterly snapshots (every ~90 days)
-        elif i == 0 or i == len(snapshots) - 1 or i % 30 == 0:
-            filtered_snapshots.append(snapshot)
-    
     chart_data = {
         'total_value': [],
         'invested_amount': []
@@ -284,7 +259,7 @@ def prepare_chart_data(snapshots: List[PortfolioSnapshot], usd_to_inr_rate: Deci
     if not purchase_rate:
         purchase_rate = Decimal('82.83')
     
-    for i, snapshot in enumerate(filtered_snapshots):
+    for i, snapshot in enumerate(snapshots):
         # Use current rate for today, historical for past dates
         if snapshot.date == datetime.date.today():
             historical_rate = usd_to_inr_rate

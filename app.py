@@ -1,11 +1,12 @@
 import os
+import json
 from typing import List, Optional
+from functools import wraps
 
-from flask import Flask, render_template, redirect, url_for, flash, request, g
+from flask import Flask, render_template, redirect, url_for, flash, request, g, session
 import datetime
 from decimal import Decimal, ROUND_DOWN
 from flask_bootstrap import Bootstrap5
-from flask_basicauth import BasicAuth
 from model import (
     Investment,
     Currency,
@@ -33,19 +34,10 @@ from portfolio_graph import (
     generate_portfolio_timeline,
     prepare_chart_data,
 )
+from encryption import encrypt_data, decrypt_data
 
 app = Flask(__name__)
-# Flask-WTF requires a secret key for CSRF protection.
-# It's good practice to set this from an environment variable.
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "a-default-secret-key-for-dev")
-
-# --- Basic Auth Configuration ---
-# Read credentials from environment variables with defaults for development.
-# For production, always set these environment variables.
-app.config["BASIC_AUTH_USERNAME"] = os.environ.get("PORTFOLIO_USERNAME", "admin")
-app.config["BASIC_AUTH_PASSWORD"] = os.environ.get("PORTFOLIO_PASSWORD", "secret")
-app.config["BASIC_AUTH_FORCE"] = True  # Protect all routes by default
-basic_auth = BasicAuth(app)
 
 bootstrap = Bootstrap5(app)
 
@@ -58,14 +50,76 @@ def inject_now():
 DATA_DIR = "data"
 DATA_FILE = os.path.join(DATA_DIR, "investments.json")
 TRANSACTIONS_FILE = os.path.join(DATA_DIR, "transactions.json")
+ENCRYPTED_DATA_FILE = os.path.join(DATA_DIR, "investments.enc")
+ENCRYPTED_TRANSACTIONS_FILE = os.path.join(DATA_DIR, "transactions.enc")
 
-# This list will hold our investment objects in memory.
-# It's loaded from the JSON file when the application starts.
-investments = load_investments_from_json(DATA_FILE)
+investments = []
+transactions_data = {}
 
-# This dictionary will hold our transaction objects in memory.
-# It's loaded from the JSON file when the application starts.
-transactions_data = load_transactions_from_json(TRANSACTIONS_FILE)
+def require_unlock(f):
+    """Decorator to require data to be unlocked."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('unlocked'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def load_encrypted_data(password: str):
+    """Load and decrypt data files."""
+    global investments, transactions_data
+    try:
+        with open(ENCRYPTED_DATA_FILE, 'r') as f:
+            inv_data = decrypt_data(json.load(f), password)
+        with open(ENCRYPTED_TRANSACTIONS_FILE, 'r') as f:
+            trans_data = decrypt_data(json.load(f), password)
+        
+        # Save to temp files and use existing load functions
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tf:
+            json.dump(inv_data, tf)
+            temp_inv = tf.name
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tf:
+            json.dump(trans_data, tf)
+            temp_trans = tf.name
+        
+        investments = load_investments_from_json(temp_inv)
+        transactions_data = load_transactions_from_json(temp_trans)
+        
+        os.unlink(temp_inv)
+        os.unlink(temp_trans)
+        return True
+    except Exception:
+        return False
+
+def save_encrypted_data():
+    """Save and encrypt data files."""
+    password = session.get('password')
+    if not password:
+        return
+    
+    # Save to temp files first
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tf:
+        temp_inv = tf.name
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tf:
+        temp_trans = tf.name
+    
+    save_investments_to_json(temp_inv, investments)
+    save_transactions_to_json(temp_trans, transactions_data)
+    
+    with open(temp_inv, 'r') as f:
+        inv_data = json.load(f)
+    with open(temp_trans, 'r') as f:
+        trans_data = json.load(f)
+    
+    with open(ENCRYPTED_DATA_FILE, 'w') as f:
+        json.dump(encrypt_data(inv_data, password), f)
+    with open(ENCRYPTED_TRANSACTIONS_FILE, 'w') as f:
+        json.dump(encrypt_data(trans_data, password), f)
+    
+    os.unlink(temp_inv)
+    os.unlink(temp_trans)
 
 
 def _calculate_investment_metrics(
@@ -206,7 +260,39 @@ def format_currency_nodot_filter(value, currency):
         return f"{floored_value:,.0f}"
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """Login page to unlock encrypted data."""
+    # Check if encrypted files exist
+    if not os.path.exists(ENCRYPTED_DATA_FILE) or not os.path.exists(ENCRYPTED_TRANSACTIONS_FILE):
+        # Fall back to unencrypted files
+        if os.path.exists(DATA_FILE) and os.path.exists(TRANSACTIONS_FILE):
+            flash("Encrypted files not found. Please run migrate_to_encrypted.py first.", "warning")
+            return render_template("login.html", show_migration_warning=True)
+        else:
+            flash("No data files found.", "danger")
+            return render_template("login.html")
+    
+    if request.method == "POST":
+        password = request.form.get("password")
+        if load_encrypted_data(password):
+            session['unlocked'] = True
+            session['password'] = password
+            flash("Data unlocked successfully!", "success")
+            return redirect(url_for("index"))
+        else:
+            flash("Incorrect password or corrupted data.", "danger")
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    """Logout and clear session."""
+    session.clear()
+    flash("Logged out successfully.", "info")
+    return redirect(url_for("login"))
+
 @app.route("/")
+@require_unlock
 def index():
     """Renders the main page with a list of all investments."""
     portfolio_data = []
@@ -398,6 +484,7 @@ def index():
 
 
 @app.route("/add", methods=["GET", "POST"])
+@require_unlock
 def add_investment():
     """Handles adding a new investment via a web form."""
     form = InvestmentForm()
@@ -410,7 +497,7 @@ def add_investment():
             currency=Currency[form.currency.data],
         )
         investments.append(new_investment)
-        save_investments_to_json(DATA_FILE, investments)
+        save_encrypted_data()
         flash(
             f"Investment '{new_investment.investment_name}' added successfully!",
             "success",
@@ -420,6 +507,7 @@ def add_investment():
 
 
 @app.route("/edit/<int:investment_index>", methods=["GET", "POST"])
+@require_unlock
 def edit_investment(investment_index):
     """Handles editing an existing investment."""
     # Basic bounds checking to ensure the investment exists
@@ -442,7 +530,7 @@ def edit_investment(investment_index):
         )
         investment_to_edit.currency = Currency[form.currency.data]
 
-        save_investments_to_json(DATA_FILE, investments)
+        save_encrypted_data()
         flash(
             f"Investment '{investment_to_edit.investment_name}' updated successfully!",
             "success",
@@ -461,6 +549,7 @@ def edit_investment(investment_index):
 
 
 @app.route("/investments/<string:investment_name>/transactions")
+@require_unlock
 def view_transactions(investment_name):
     """Displays all transactions for a specific investment."""
     # Find the investment object to get its currency
@@ -521,6 +610,7 @@ def view_transactions(investment_name):
 @app.route(
     "/investments/<string:investment_name>/transactions/add", methods=["GET", "POST"]
 )
+@require_unlock
 def add_transaction(investment_name=None):
     """Handles adding a new transaction."""
     if not investments:
@@ -562,7 +652,7 @@ def add_transaction(investment_name=None):
         transactions_data.setdefault(investment_name_from_form, []).append(
             new_transaction
         )
-        save_transactions_to_json(TRANSACTIONS_FILE, transactions_data)
+        save_encrypted_data()
         flash(f"Transaction added for {investment_name_from_form}!", "success")
         return redirect(
             url_for("view_transactions", investment_name=investment_name_from_form)
@@ -579,6 +669,7 @@ def add_transaction(investment_name=None):
     "/investments/<string:investment_name>/transactions/edit/<int:transaction_index>",
     methods=["GET", "POST"],
 )
+@require_unlock
 def edit_transaction(investment_name, transaction_index):
     """Handles editing an existing transaction."""
     transactions_for_investment = transactions_data.get(investment_name, [])
@@ -623,7 +714,7 @@ def edit_transaction(investment_name, transaction_index):
                 transaction_to_edit
             )
 
-        save_transactions_to_json(TRANSACTIONS_FILE, transactions_data)
+        save_encrypted_data()
         flash(f"Transaction updated for {new_investment_name}!", "success")
         return redirect(
             url_for("view_transactions", investment_name=new_investment_name)
@@ -642,6 +733,7 @@ def edit_transaction(investment_name, transaction_index):
     "/investments/<string:investment_name>/transactions/delete/<int:transaction_index>",
     methods=["POST"],
 )
+@require_unlock
 def delete_transaction(investment_name, transaction_index):
     """Handles deleting a transaction."""
     transactions_for_investment = transactions_data.get(investment_name, [])
@@ -650,12 +742,13 @@ def delete_transaction(investment_name, transaction_index):
         return redirect(url_for("view_transactions", investment_name=investment_name))
 
     transactions_for_investment.pop(transaction_index)
-    save_transactions_to_json(TRANSACTIONS_FILE, transactions_data)
+    save_encrypted_data()
     flash(f"Transaction for {investment_name} deleted!", "info")
     return redirect(url_for("view_transactions", investment_name=investment_name))
 
 
 @app.route("/reload")
+@require_unlock
 def reload_data():
     """Reloads all data from the JSON files on disk."""
     global investments, transactions_data
@@ -666,9 +759,23 @@ def reload_data():
 
 
 @app.route("/portfolio-graph")
+@require_unlock
 def portfolio_graph():
     """Displays a graph showing portfolio growth over time."""
     try:
+        # Get date range from query parameter
+        range_param = request.args.get('range', 'all')
+        end_date = datetime.date.today()
+        
+        if range_param == '3m':
+            start_date = end_date - datetime.timedelta(days=90)
+        elif range_param == '6m':
+            start_date = end_date - datetime.timedelta(days=180)
+        elif range_param == '1y':
+            start_date = end_date - datetime.timedelta(days=365)
+        else:
+            start_date = None  # All time
+        
         from api_calls import get_current_rate
         
         # Get current rates for all investments
@@ -685,7 +792,19 @@ def portfolio_graph():
             usd_to_inr_rate = Decimal('83')
         
         # Generate portfolio timeline
-        snapshots = generate_portfolio_timeline(investments, transactions_data, current_rates)
+        snapshots = generate_portfolio_timeline(investments, transactions_data, current_rates, start_date, end_date)
+        
+        if not snapshots:
+            flash("No portfolio data available for graphing.", "warning")
+            return redirect(url_for("index"))
+        
+        # Prepare data for Chart.js
+        chart_data = prepare_chart_data(snapshots, usd_to_inr_rate)
+        
+        return render_template("portfolio_graph.html", chart_data=chart_data, selected_range=range_param)
+    except Exception as e:
+        flash(f"Error generating graph: {str(e)}", "danger")
+        return redirect(url_for("index"))
         
         if not snapshots:
             flash("No portfolio data available for graphing.", "warning")
