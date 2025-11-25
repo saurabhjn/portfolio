@@ -21,6 +21,7 @@
                         <strong>How to read this graph:</strong><br>
                         <span style="color: #28a745;">●</span> <strong>Green area</strong> = Total portfolio value (your money + market gains)<br>
                         <span style="color: #dc3545;">●</span> <strong>Red area</strong> = Money you invested (no gains included)<br>
+                        <span style="color: #ffc107;">●</span> <strong>Yellow line</strong> = Portfolio value if GOOG was never sold<br>
                         <strong>The gap between them = Market gains</strong> - The wider the gap, the more the market has grown your investments.
                     </div>
                     <div class="mt-2">
@@ -53,6 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const totalValueData = chartData.total_value || [];
     const investedData = chartData.invested_amount || [];
+    const noGoogSaleData = chartData.no_goog_sale || [];
     
     document.getElementById('chartInfo').textContent = 
         `Showing ${totalValueData.length} data points`;
@@ -85,6 +87,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     pointHoverRadius: 4,
                     fill: true,
                     tension: 0.1
+                },
+                {
+                    label: 'If GOOG Never Sold',
+                    data: noGoogSaleData,
+                    borderColor: '#ffc107',
+                    backgroundColor: 'rgba(255, 193, 7, 0.05)',
+                    pointRadius: 1,
+                    pointHoverRadius: 4,
+                    fill: false,
+                    tension: 0.1,
+                    borderDash: [5, 5]
                 }
             ]
         },

@@ -20,6 +20,8 @@ class PortfolioSnapshot:
     new_investment_inr: Decimal = Decimal(0)
     is_new_investment: bool = False
     event_description: str = ""
+    no_goog_sale_usd: Decimal = Decimal(0)
+    no_goog_sale_inr: Decimal = Decimal(0)
 
 
 def get_historical_stock_price(ticker: str, date: datetime.date) -> Optional[Decimal]:
@@ -90,7 +92,8 @@ def calculate_portfolio_value_on_date(
     transactions_data: Dict[str, List[Transaction]],
     target_date: datetime.date,
     current_rates: Dict[str, Decimal],
-    is_today: bool = False
+    is_today: bool = False,
+    exclude_investments: set = None
 ) -> Tuple[Decimal, Decimal, Decimal, Decimal]:
     """Calculate portfolio value using historical prices."""
     total_usd = Decimal(0)
@@ -98,7 +101,13 @@ def calculate_portfolio_value_on_date(
     cost_basis_usd = Decimal(0)
     cost_basis_inr = Decimal(0)
     
+    if exclude_investments is None:
+        exclude_investments = set()
+    
     for investment in investments:
+        if investment.investment_name in exclude_investments:
+            continue
+            
         transactions = transactions_data.get(investment.investment_name, [])
         
         holdings = Decimal(0)
@@ -143,6 +152,113 @@ def calculate_portfolio_value_on_date(
                 cost_basis_inr += cost_basis
     
     return total_usd, total_inr, cost_basis_usd, cost_basis_inr
+
+
+def calculate_no_goog_sale_value(
+    investments: List[Investment],
+    transactions_data: Dict[str, List[Transaction]],
+    target_date: datetime.date,
+    current_rates: Dict[str, Decimal],
+    is_today: bool = False
+) -> Tuple[Decimal, Decimal]:
+    """Calculate portfolio value as if GOOG was never sold."""
+    goog_investment = None
+    for inv in investments:
+        if 'GOOG' in inv.investment_name.upper():
+            goog_investment = inv
+            break
+    
+    if not goog_investment:
+        return Decimal(0), Decimal(0)
+    
+    # Get GOOG sales up to target date
+    goog_transactions = transactions_data.get(goog_investment.investment_name, [])
+    goog_sales = [(t.sell_date, t.sell_quantity * t.sell_rate) 
+                  for t in goog_transactions 
+                  if t.sell_date and t.sell_date <= target_date and t.sell_quantity and t.sell_rate]
+    
+    if not goog_sales:
+        return Decimal(0), Decimal(0)
+    
+    # Find purchases within 30 days after each GOOG sale
+    exclude_transactions = {}  # {inv_name: [transaction_indices]}
+    
+    for sale_date, sale_amount in goog_sales:
+        window_start = sale_date
+        window_end = sale_date + datetime.timedelta(days=30)
+        remaining_amount = sale_amount
+        
+        for inv in investments:
+            if inv.investment_name == goog_investment.investment_name:
+                continue
+            
+            txs = transactions_data.get(inv.investment_name, [])
+            for idx, tx in enumerate(txs):
+                if (tx.buy_date and window_start <= tx.buy_date <= window_end and 
+                    tx.buy_quantity and tx.buy_rate):
+                    buy_amount = tx.buy_quantity * tx.buy_rate
+                    # If purchase is within window and we have remaining sale proceeds
+                    if remaining_amount > 0 and buy_amount <= remaining_amount * Decimal('1.1'):
+                        if inv.investment_name not in exclude_transactions:
+                            exclude_transactions[inv.investment_name] = []
+                        exclude_transactions[inv.investment_name].append(idx)
+                        remaining_amount -= buy_amount
+    
+    # Calculate GOOG value if never sold
+    goog_holdings = Decimal(0)
+    for tx in goog_transactions:
+        if tx.buy_date and tx.buy_date <= target_date and tx.buy_quantity:
+            goog_holdings += tx.buy_quantity
+    
+    if is_today:
+        goog_rate = current_rates.get(goog_investment.investment_name)
+    elif goog_investment.ticker:
+        goog_rate = get_historical_stock_price(goog_investment.ticker, target_date)
+    else:
+        goog_rate = None
+    
+    hypothetical_goog_value = goog_holdings * goog_rate if goog_rate and goog_holdings > 0 else Decimal(0)
+    
+    # Calculate portfolio excluding GOOG-funded purchases
+    total_usd = Decimal(0)
+    total_inr = Decimal(0)
+    
+    for investment in investments:
+        if investment.investment_name == goog_investment.investment_name:
+            continue
+            
+        transactions = transactions_data.get(investment.investment_name, [])
+        excluded_indices = exclude_transactions.get(investment.investment_name, [])
+        
+        holdings = Decimal(0)
+        for idx, tx in enumerate(transactions):
+            if idx in excluded_indices:
+                continue
+            if tx.buy_date and tx.buy_date <= target_date and tx.buy_quantity:
+                holdings += tx.buy_quantity
+            if tx.sell_date and tx.sell_date <= target_date and tx.sell_quantity:
+                holdings -= tx.sell_quantity
+        
+        if holdings > 0:
+            if is_today:
+                rate = current_rates.get(investment.investment_name)
+            elif investment.ticker:
+                if investment.ticker.isdigit() and len(investment.ticker) == 6:
+                    rate = get_historical_nav(investment.ticker, target_date)
+                else:
+                    rate = get_historical_stock_price(investment.ticker, target_date)
+            else:
+                rate = None
+            
+            if rate:
+                value = holdings * rate
+                if investment.currency == Currency.USD:
+                    total_usd += value
+                else:
+                    total_inr += value
+    
+    total_usd += hypothetical_goog_value
+    return total_usd, total_inr
 
 
 def detect_new_investments(
@@ -226,6 +342,10 @@ def generate_portfolio_timeline(
             investments, transactions_data, date, current_rates, is_today
         )
         
+        no_goog_usd, no_goog_inr = calculate_no_goog_sale_value(
+            investments, transactions_data, date, current_rates, is_today
+        )
+        
         new_usd, new_inr, is_new_investment, event_desc = detect_new_investments(
             investments, transactions_data, date
         )
@@ -239,7 +359,9 @@ def generate_portfolio_timeline(
             new_investment_usd=new_usd,
             new_investment_inr=new_inr,
             is_new_investment=is_new_investment,
-            event_description=event_desc
+            event_description=event_desc,
+            no_goog_sale_usd=no_goog_usd,
+            no_goog_sale_inr=no_goog_inr
         )
         snapshots.append(snapshot)
     
@@ -251,7 +373,8 @@ def prepare_chart_data(snapshots: List[PortfolioSnapshot], usd_to_inr_rate: Deci
     
     chart_data = {
         'total_value': [],
-        'invested_amount': []
+        'invested_amount': [],
+        'no_goog_sale': []
     }
     
     # Use same historical rate as home page (March 15, 2024)
@@ -270,6 +393,7 @@ def prepare_chart_data(snapshots: List[PortfolioSnapshot], usd_to_inr_rate: Deci
         
         total_inr = snapshot.total_value_inr + (snapshot.total_value_usd * historical_rate)
         cost_inr = snapshot.cost_basis_inr + (snapshot.cost_basis_usd * purchase_rate)
+        no_goog_inr = snapshot.no_goog_sale_inr + (snapshot.no_goog_sale_usd * historical_rate)
         
         chart_data['total_value'].append({
             'x': snapshot.date.strftime('%Y-%m-%d'),
@@ -280,6 +404,12 @@ def prepare_chart_data(snapshots: List[PortfolioSnapshot], usd_to_inr_rate: Deci
         chart_data['invested_amount'].append({
             'x': snapshot.date.strftime('%Y-%m-%d'),
             'y': float(cost_inr),
+            'event': snapshot.event_description
+        })
+        
+        chart_data['no_goog_sale'].append({
+            'x': snapshot.date.strftime('%Y-%m-%d'),
+            'y': float(no_goog_inr),
             'event': snapshot.event_description
         })
     
