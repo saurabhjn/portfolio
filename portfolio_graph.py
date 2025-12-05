@@ -171,44 +171,24 @@ def calculate_no_goog_sale_value(
     if not goog_investment:
         return Decimal(0), Decimal(0)
     
-    # Get GOOG sales up to target date
     goog_transactions = transactions_data.get(goog_investment.investment_name, [])
-    goog_sales = [(t.sell_date, t.sell_quantity * t.sell_rate) 
-                  for t in goog_transactions 
-                  if t.sell_date and t.sell_date <= target_date and t.sell_quantity and t.sell_rate]
     
-    if not goog_sales:
-        return Decimal(0), Decimal(0)
-    
-    # Find purchases within 30 days after each GOOG sale
-    exclude_transactions = {}  # {inv_name: [transaction_indices]}
-    
-    for sale_date, sale_amount in goog_sales:
-        window_start = sale_date
-        window_end = sale_date + datetime.timedelta(days=30)
-        remaining_amount = sale_amount
-        
-        for inv in investments:
-            if inv.investment_name == goog_investment.investment_name:
-                continue
-            
-            txs = transactions_data.get(inv.investment_name, [])
-            for idx, tx in enumerate(txs):
-                if (tx.buy_date and window_start <= tx.buy_date <= window_end and 
-                    tx.buy_quantity and tx.buy_rate):
-                    buy_amount = tx.buy_quantity * tx.buy_rate
-                    # If purchase is within window and we have remaining sale proceeds
-                    if remaining_amount > 0 and buy_amount <= remaining_amount * Decimal('1.1'):
-                        if inv.investment_name not in exclude_transactions:
-                            exclude_transactions[inv.investment_name] = []
-                        exclude_transactions[inv.investment_name].append(idx)
-                        remaining_amount -= buy_amount
-    
-    # Calculate GOOG value if never sold
-    goog_holdings = Decimal(0)
+    # Calculate current GOOG holdings (net of sales)
+    current_holdings = Decimal(0)
     for tx in goog_transactions:
         if tx.buy_date and tx.buy_date <= target_date and tx.buy_quantity:
-            goog_holdings += tx.buy_quantity
+            current_holdings += tx.buy_quantity
+        if tx.sell_date and tx.sell_date <= target_date and tx.sell_quantity:
+            current_holdings -= tx.sell_quantity
+    
+    # Calculate hypothetical holdings if never sold
+    hypothetical_holdings = Decimal(0)
+    for tx in goog_transactions:
+        if tx.buy_date and tx.buy_date <= target_date and tx.buy_quantity:
+            hypothetical_holdings += tx.buy_quantity
+    
+    if hypothetical_holdings == current_holdings:
+        return Decimal(0), Decimal(0)
     
     if is_today:
         goog_rate = current_rates.get(goog_investment.investment_name)
@@ -217,48 +197,22 @@ def calculate_no_goog_sale_value(
     else:
         goog_rate = None
     
-    hypothetical_goog_value = goog_holdings * goog_rate if goog_rate and goog_holdings > 0 else Decimal(0)
+    if not goog_rate:
+        return Decimal(0), Decimal(0)
     
-    # Calculate portfolio excluding GOOG-funded purchases
-    total_usd = Decimal(0)
-    total_inr = Decimal(0)
+    current_goog_value = current_holdings * goog_rate
+    hypothetical_goog_value = hypothetical_holdings * goog_rate
     
-    for investment in investments:
-        if investment.investment_name == goog_investment.investment_name:
-            continue
-            
-        transactions = transactions_data.get(investment.investment_name, [])
-        excluded_indices = exclude_transactions.get(investment.investment_name, [])
-        
-        holdings = Decimal(0)
-        for idx, tx in enumerate(transactions):
-            if idx in excluded_indices:
-                continue
-            if tx.buy_date and tx.buy_date <= target_date and tx.buy_quantity:
-                holdings += tx.buy_quantity
-            if tx.sell_date and tx.sell_date <= target_date and tx.sell_quantity:
-                holdings -= tx.sell_quantity
-        
-        if holdings > 0:
-            if is_today:
-                rate = current_rates.get(investment.investment_name)
-            elif investment.ticker:
-                if investment.ticker.isdigit() and len(investment.ticker) == 6:
-                    rate = get_historical_nav(investment.ticker, target_date)
-                else:
-                    rate = get_historical_stock_price(investment.ticker, target_date)
-            else:
-                rate = None
-            
-            if rate:
-                value = holdings * rate
-                if investment.currency == Currency.USD:
-                    total_usd += value
-                else:
-                    total_inr += value
+    # Get actual portfolio value
+    actual_usd, actual_inr, _, _ = calculate_portfolio_value_on_date(
+        investments, transactions_data, target_date, current_rates, is_today
+    )
     
-    total_usd += hypothetical_goog_value
-    return total_usd, total_inr
+    # No GOOG sale = actual portfolio - current GOOG + hypothetical GOOG
+    no_sale_usd = actual_usd - current_goog_value + hypothetical_goog_value
+    no_sale_inr = actual_inr
+    
+    return no_sale_usd, no_sale_inr
 
 
 def detect_new_investments(
