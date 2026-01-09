@@ -154,8 +154,7 @@ def _calculate_investment_metrics(
         current_value_for_xirr = current_value - total_gain_amount
     else:
         # For investments without a ticker or if rate fetch fails
-        total_sell_amount = totals.get("total_sell_amount", Decimal(0))
-        current_value = purchase_value + total_gain_amount - total_sell_amount
+        current_value = purchase_value + total_gain_amount
         gain = total_gain_amount + total_gain_from_sale
         current_value_for_xirr = current_value - total_gain_amount
 
