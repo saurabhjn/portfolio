@@ -60,7 +60,8 @@ def require_unlock(f):
     """Decorator to require data to be unlocked."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('unlocked'):
+        if not session.get('unlocked') or not investments:
+            session.clear()
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
