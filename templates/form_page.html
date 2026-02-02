@@ -1,10 +1,33 @@
 {% extends 'base.html' %}
 
 {% block content %}
-    <div class="row">
-        <div class="col-md-8 col-lg-6 mx-auto">
-            <h1 class="mb-4">{{ title }}</h1>
-            {% include 'form.html' %}
-        </div>
+<div class="row">
+    <div class="col-md-8 col-lg-6 mx-auto">
+        <h1 class="mb-4">{{ title }}</h1>
+        {% include 'form.html' %}
     </div>
+</div>
+
+{% if form.__class__.__name__ == 'ExpenseForm' %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const isRecurringCheck = document.getElementById('is_recurring');
+        const periodField = document.getElementById('recurrence_period').closest('.mb-3');
+        const endDateField = document.getElementById('end_date').closest('.mb-3');
+
+        function toggleRecurringFields() {
+            if (isRecurringCheck.checked) {
+                periodField.style.display = 'block';
+                endDateField.style.display = 'block';
+            } else {
+                periodField.style.display = 'none';
+                endDateField.style.display = 'none';
+            }
+        }
+
+        isRecurringCheck.addEventListener('change', toggleRecurringFields);
+        toggleRecurringFields(); // Initial state
+    });
+</script>
+{% endif %}
 {% endblock %}

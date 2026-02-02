@@ -12,6 +12,28 @@ class Currency(Enum):
 
     USD = "USD"
     INR = "INR"
+    EUR = "EUR"
+    GBP = "GBP"
+
+
+class ExpenseCategory(Enum):
+    """Enumeration for expense categories."""
+
+    LIVING = "Living"
+    EDUCATION = "Education"
+    HEALTH = "Health"
+    RETIREMENT = "Retirement"
+    LEISURE = "Leisure"
+    OTHER = "Other"
+
+
+class RecurrencePeriod(Enum):
+    """Enumeration for recurrence periods."""
+
+    NONE = "None"
+    MONTHLY = "Monthly"
+    YEARLY = "Yearly"
+    EVERY_5_YEARS = "Every 5 Years"
 
 
 @dataclass
@@ -39,6 +61,20 @@ class Transaction:
     gain_from_sale: Optional[Decimal] = None
     gain_date: Optional[datetime.date] = None
     gain_amount: Optional[Decimal] = None
+
+
+@dataclass
+class Expense:
+    """A data class representing a future or recurring expense."""
+
+    name: str
+    amount: Decimal
+    currency: Currency
+    date: datetime.date
+    category: ExpenseCategory
+    is_recurring: bool = False
+    recurrence_period: RecurrencePeriod = RecurrencePeriod.NONE
+    end_date: Optional[datetime.date] = None
 
 
 class _InvestmentJSONEncoder(json.JSONEncoder):
@@ -169,6 +205,43 @@ def load_transactions_from_json(filepath: str) -> Dict[str, List[Transaction]]:
         return transactions_data
     except FileNotFoundError:
         return {}  # Return empty dict if file doesn't exist
+
+
+def save_expenses_to_json(filepath: str, expenses: List[Expense]):
+    """Saves a list of Expense objects to a JSON file."""
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "w", encoding="utf-8") as f:
+        list_of_dicts = [asdict(e) for e in expenses]
+        json.dump(list_of_dicts, f, cls=_InvestmentJSONEncoder, indent=4)
+
+
+def load_expenses_from_json(filepath: str) -> List[Expense]:
+    """Loads a list of Expense objects from a JSON file."""
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        return [
+            Expense(
+                name=item["name"],
+                amount=Decimal(item["amount"]),
+                currency=Currency(item["currency"]),
+                date=datetime.date.fromisoformat(item["date"]),
+                category=ExpenseCategory(item["category"]),
+                is_recurring=item.get("is_recurring", False),
+                recurrence_period=RecurrencePeriod(
+                    item.get("recurrence_period", "None")
+                ),
+                end_date=(
+                    datetime.date.fromisoformat(item["end_date"])
+                    if item.get("end_date")
+                    else None
+                ),
+            )
+            for item in data
+        ]
+    except FileNotFoundError:
+        return []
 
 
 def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, Decimal]:

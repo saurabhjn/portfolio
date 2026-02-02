@@ -114,18 +114,28 @@ def get_historical_usd_to_inr_rate(date: datetime.date) -> Optional[Decimal]:
     return None
 
 
-def get_usd_to_inr_rate() -> Optional[Decimal]:
-    """Fetches the latest USD to INR conversion rate."""
+def get_exchange_rates(base_currency: str = "USD") -> dict:
+    """Fetches the latest exchange rates for a base currency."""
     try:
         response = requests.get(
-            "https://api.exchangerate-api.com/v4/latest/USD", timeout=5
+            f"https://api.exchangerate-api.com/v4/latest/{base_currency}", timeout=5
         )
         response.raise_for_status()
         data = response.json()
-        inr_rate = data.get("rates", {}).get("INR")
-        if inr_rate:
-            return Decimal(str(inr_rate))
-    except (requests.exceptions.RequestException, json.JSONDecodeError, KeyError) as e:
-        print(f"exchangerate-api failed for USD->INR: {e}")
-    
-    return None
+        rates = data.get("rates", {})
+        return {k: Decimal(str(v)) for k, v in rates.items()}
+    except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+        print(f"exchangerate-api failed for {base_currency}: {e}")
+        return {}
+
+
+def get_usd_to_inr_rate() -> Optional[Decimal]:
+    """Fetches the latest USD to INR conversion rate."""
+    rates = get_exchange_rates("USD")
+    return rates.get("INR")
+
+
+def get_rate(from_curr: str, to_curr: str) -> Optional[Decimal]:
+    """Fetches the latest conversion rate from one currency to another."""
+    rates = get_exchange_rates(from_curr)
+    return rates.get(to_curr)

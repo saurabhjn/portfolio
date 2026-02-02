@@ -1,9 +1,16 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, DecimalField, SelectField, SubmitField, TextAreaField
+from wtforms import (
+    StringField,
+    DecimalField,
+    SelectField,
+    SubmitField,
+    TextAreaField,
+    BooleanField,
+)
 from wtforms.validators import DataRequired, Length, Optional, ValidationError
 from wtforms.fields.datetime import DateField
 
-from model import Currency
+from model import Currency, ExpenseCategory, RecurrencePeriod
 
 
 class InvestmentForm(FlaskForm):
@@ -127,3 +134,33 @@ class TransactionForm(FlaskForm):
                 has_error = True
 
         return not has_error
+
+
+class ExpenseForm(FlaskForm):
+    """Form for adding or editing an expense."""
+
+    name = StringField(
+        "Expense Name", validators=[DataRequired(), Length(min=2, max=100)]
+    )
+    amount = DecimalField("Amount", validators=[DataRequired()], places=2)
+    currency = SelectField(
+        "Currency",
+        choices=[(c.name, c.value) for c in Currency],
+        validators=[DataRequired()],
+    )
+    date = DateField("Date", format="%Y-%m-%d", validators=[DataRequired()])
+    category = SelectField(
+        "Category",
+        choices=[(c.name, c.value) for c in ExpenseCategory],
+        validators=[DataRequired()],
+    )
+    is_recurring = BooleanField("Is Recurring?")
+    recurrence_period = SelectField(
+        "Recurrence Period",
+        choices=[(c.name, c.value) for c in RecurrencePeriod],
+        default="NONE",
+    )
+    end_date = DateField(
+        "End Date (Optional)", format="%Y-%m-%d", validators=[Optional()]
+    )
+    submit = SubmitField("Save Expense")
