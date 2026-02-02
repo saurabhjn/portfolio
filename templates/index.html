@@ -35,8 +35,8 @@
     </thead>
     <tbody>
         {% for item in portfolio_data %}
-        <tr {% if item.current_value is not none and item.current_value < 100 %}class="collapsible-row-small-value" {%
-            endif %}>
+        <tr {% if (item.current_value is not none and item.current_value < 100) or item.is_exited
+            %}class="collapsible-row-small-value" {% endif %}>
             <td>{{ item.investment.ticker }}</td>
             <td>
                 <a href="{{ url_for('view_transactions', investment_name=item.investment.investment_name) }}">{{
@@ -252,10 +252,10 @@
             const updateText = () => {
                 if (table.classList.contains('show-small-investments')) {
                     toggleSmallBtn.textContent = '−';
-                    toggleText.textContent = `Hide ${smallValueRows.length} small investment(s)`;
+                    toggleText.textContent = `Hide ${smallValueRows.length} small or exited investment(s)`;
                 } else {
                     toggleSmallBtn.textContent = '+';
-                    toggleText.textContent = `Show ${smallValueRows.length} small investment(s)`;
+                    toggleText.textContent = `Show ${smallValueRows.length} small or exited investment(s)`;
                 }
             };
 

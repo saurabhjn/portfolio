@@ -407,6 +407,10 @@ def index():
             transactions, metrics["current_value_for_xirr"], datetime.date.today()
         )
 
+        # Tag exited investments with tiny residuals (rounding errors)
+        # We consider < 0.05 units and < $1/₹1 as effectively exited.
+        is_exited = metrics["remaining_quantity"] < Decimal("0.05") and (metrics["current_value"] is None or metrics["current_value"] < Decimal("1.0"))
+
         portfolio_data.append(
             {
                 "investment": inv,
@@ -416,6 +420,7 @@ def index():
                 "current_value": metrics["current_value"],
                 "xirr_value": xirr_value,
                 "gain": metrics["gain"],
+                "is_exited": is_exited,
             }
         )
 
