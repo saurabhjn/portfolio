@@ -69,7 +69,52 @@ def get_current_rate(ticker: str, force_refresh: bool = False) -> Optional[Decim
                 return Decimal(str(hist['Close'].iloc[-1]))
         except Exception as e:
             print(f"yfinance failed for {ticker}: {e}")
-    
+def get_historical_rate(ticker: str, date: datetime.date) -> Optional[Decimal]:
+    """Fetches the price for a given ticker on a specific historical date."""
+    if not ticker:
+        return None
+
+    date_str = date.isoformat()
+    cache_key = f"HIST_{ticker}_{date_str}"
+
+    if cache_key in rate_cache:
+        return rate_cache[cache_key][1]
+
+    rate = None
+    if ticker.isdigit() and len(ticker) == 6:
+        try:
+            url = f"https://api.mfapi.in/mf/{ticker}"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("data"):
+                # Data is sorted by date descending, find the closest date <= requested date
+                for entry in data["data"]:
+                    # Expected format: "02-02-2026"
+                    entry_date = datetime.datetime.strptime(entry["date"], "%d-%m-%Y").date()
+                    if entry_date <= date:
+                        rate = Decimal(str(entry.get("nav")))
+                        break
+        except Exception as e:
+            print(f"Historical MFAPI failed for {ticker}: {e}")
+    else:
+        try:
+            stock = yf.Ticker(ticker)
+            # Fetch data around the date
+            start_date = date - datetime.timedelta(days=7)
+            end_date = date + datetime.timedelta(days=1)
+            hist = stock.history(start=start_date.isoformat(), end=end_date.isoformat())
+            if not hist.empty:
+                # Get the last available close price on or before the date
+                rate = Decimal(str(hist['Close'].iloc[-1]))
+        except Exception as e:
+            print(f"Historical yfinance failed for {ticker}: {e}")
+
+    if rate is not None:
+        rate_cache[cache_key] = (datetime.datetime.now(), rate)
+        save_rate_cache(RATE_CACHE_FILE, rate_cache)
+        return rate
+
     return None
 
 

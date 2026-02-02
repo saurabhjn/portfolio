@@ -61,7 +61,9 @@ def calculate_xirr_from_cash_flows(
 
     try:
         # Calculate XIRR; pyxirr returns a float
-        result = pyxirr_calc(dates, values)
+        # Convert Decimals to float for compatibility
+        float_values = [float(v) for v in values]
+        result = pyxirr_calc(dates, float_values)
 
         # The library can return NaN or infinity on calculation errors
         if result is None or abs(result) == float("inf") or result != result:
@@ -91,5 +93,89 @@ def calculate_investment_xirr(
     # We only add it if there's a positive value to be realized.
     if current_value is not None and current_value > 0:
         cash_flows.append((current_date, current_value))
+
+    return calculate_xirr_from_cash_flows(cash_flows)
+def get_windowed_cash_flow_components(
+    transactions: List[Transaction],
+    start_date: datetime.date,
+    end_date: datetime.date,
+    start_rate: Optional[Decimal],
+) -> Tuple[Decimal, List[Tuple[datetime.date, Decimal]]]:
+    """
+    Returns the (starting_value, list_of_flows_within_window).
+    Used for calculating windowed XIRR on a single asset or a segment.
+    """
+    qty_at_start = Decimal(0)
+    val_at_start = Decimal(0)
+    window_cash_flows = []
+
+    for tx in transactions:
+        tx_date = tx.buy_date or tx.sell_date or tx.gain_date
+        if not tx_date:
+            continue
+
+        # 1. Handle Buys
+        if tx.buy_rate is not None:
+            amt = (tx.buy_quantity * tx.buy_rate) if (tx.buy_quantity is not None and tx.buy_quantity > 0) else tx.buy_rate
+            if tx_date < start_date:
+                val_at_start += amt
+                if tx.buy_quantity: qty_at_start += tx.buy_quantity
+            elif tx_date <= end_date:
+                window_cash_flows.append((tx_date, -amt))
+
+        # 2. Handle Sells/Payouts
+        if tx.sell_rate is not None:
+            amt = (tx.sell_quantity * tx.sell_rate) if (tx.sell_quantity is not None and tx.sell_quantity > 0) else tx.sell_rate
+            if tx_date < start_date:
+                val_at_start -= amt
+                if tx.sell_quantity: qty_at_start -= tx.sell_quantity
+            elif tx_date <= end_date:
+                window_cash_flows.append((tx_date, amt))
+
+        # 3. Handle Gains (Income/Dividends)
+        if tx.gain_amount is not None:
+            if tx_date < start_date:
+                val_at_start += tx.gain_amount
+            elif tx_date <= end_date:
+                window_cash_flows.append((tx_date, tx.gain_amount))
+
+    if start_rate is not None:
+        calculated_start_value = qty_at_start * start_rate
+    else:
+        calculated_start_value = val_at_start
+
+    return calculated_start_value, window_cash_flows
+
+
+def calculate_historical_investment_xirr(
+    transactions: List[Transaction],
+    start_date: datetime.date,
+    end_date: datetime.date,
+    start_rate: Optional[Decimal],
+    end_market_value: Optional[Decimal],
+) -> Optional[Decimal]:
+    """
+    Calculates the XIRR for a specific time window.
+    """
+    start_value, window_flows = get_windowed_cash_flow_components(
+        transactions, start_date, end_date, start_rate
+    )
+
+    if start_value <= 0 and not window_flows:
+        return None
+
+    cash_flows = []
+    if start_value > 0:
+        cash_flows.append((start_date, -start_value))
+    
+    cash_flows.extend(window_flows)
+
+    if end_market_value is not None and end_market_value > 0:
+        cash_flows.append((end_date, end_market_value))
+
+    if len(cash_flows) >= 2:
+        total_sum = sum(v for d, v in cash_flows)
+        if abs(total_sum) < Decimal("0.01"):
+            return Decimal(0)
 
     return calculate_xirr_from_cash_flows(cash_flows)

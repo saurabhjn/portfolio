@@ -26,6 +26,7 @@ from model import (
 
 from api_calls import (
     get_current_rate,
+    get_historical_rate,
     get_usd_to_inr_rate,
     get_historical_usd_to_inr_rate,
     get_rate,
@@ -35,6 +36,8 @@ from api_calls import (
 from form import InvestmentForm, TransactionForm, ExpenseForm
 from xirr import (
     calculate_investment_xirr,
+    calculate_historical_investment_xirr,
+    get_windowed_cash_flow_components,
     calculate_xirr_from_cash_flows,
     generate_cash_flows_from_transactions,
 )
@@ -354,17 +357,31 @@ def index():
     total_current_value_usd = Decimal(0)
     total_current_value_inr = Decimal(0)
 
-    # New variables for ticker-based USD investments
+    # Combined variables for ticker-based USD investments
     total_purchase_usd_ticker = Decimal(0)
     total_current_usd_ticker = Decimal(0)
     total_gain_usd_ticker = Decimal(0)
     usd_ticker_cash_flows = []
 
-    # New variables for ticker-based INR investments
+    # Combined variables for ticker-based INR investments
     total_purchase_inr_ticker = Decimal(0)
     total_current_inr_ticker = Decimal(0)
     total_gain_inr_ticker = Decimal(0)
     inr_ticker_cash_flows = []
+
+    # Historical Aggregate Trackers
+    today = datetime.date.today()
+    date_3m = today - relativedelta(months=3)
+    date_6m = today - relativedelta(months=6)
+    date_12m = today - relativedelta(years=1)
+
+    usd_3m_start_val = Decimal(0); usd_3m_flows = []
+    usd_6m_start_val = Decimal(0); usd_6m_flows = []
+    usd_12m_start_val = Decimal(0); usd_12m_flows = []
+    
+    inr_3m_start_val = Decimal(0); inr_3m_flows = []
+    inr_6m_start_val = Decimal(0); inr_6m_flows = []
+    inr_12m_start_val = Decimal(0); inr_12m_flows = []
 
     for inv in investments:
         transactions = transactions_data.get(inv.investment_name, [])
@@ -390,6 +407,13 @@ def index():
             usd_ticker_cash_flows.extend(
                 generate_cash_flows_from_transactions(transactions)
             )
+            # Add to historical aggregates
+            s3, f3 = get_windowed_cash_flow_components(transactions, date_3m, today, get_historical_rate(inv.ticker, date_3m))
+            usd_3m_start_val += s3; usd_3m_flows.extend(f3)
+            s6, f6 = get_windowed_cash_flow_components(transactions, date_6m, today, get_historical_rate(inv.ticker, date_6m))
+            usd_6m_start_val += s6; usd_6m_flows.extend(f6)
+            s12, f12 = get_windowed_cash_flow_components(transactions, date_12m, today, get_historical_rate(inv.ticker, date_12m))
+            usd_12m_start_val += s12; usd_12m_flows.extend(f12)
 
         # If it's an INR investment with a ticker, add to the market totals
         if inv.currency == Currency.INR and inv.ticker:
@@ -401,10 +425,35 @@ def index():
             inr_ticker_cash_flows.extend(
                 generate_cash_flows_from_transactions(transactions)
             )
+            # Add to historical aggregates
+            s3, f3 = get_windowed_cash_flow_components(transactions, date_3m, today, get_historical_rate(inv.ticker, date_3m))
+            inr_3m_start_val += s3; inr_3m_flows.extend(f3)
+            s6, f6 = get_windowed_cash_flow_components(transactions, date_6m, today, get_historical_rate(inv.ticker, date_6m))
+            inr_6m_start_val += s6; inr_6m_flows.extend(f6)
+            s12, f12 = get_windowed_cash_flow_components(transactions, date_12m, today, get_historical_rate(inv.ticker, date_12m))
+            inr_12m_start_val += s12; inr_12m_flows.extend(f12)
 
         # Calculate XIRR for the investment
+        today = datetime.date.today()
         xirr_value = calculate_investment_xirr(
-            transactions, metrics["current_value_for_xirr"], datetime.date.today()
+            transactions, metrics["current_value_for_xirr"], today
+        )
+
+        # Historical XIRRs (3m, 6m, 12m)
+        xirr_3m = calculate_historical_investment_xirr(
+            transactions, today - relativedelta(months=3), today,
+            get_historical_rate(inv.ticker, today - relativedelta(months=3)) if inv.ticker else None,
+            metrics["current_value"]
+        )
+        xirr_6m = calculate_historical_investment_xirr(
+            transactions, today - relativedelta(months=6), today,
+            get_historical_rate(inv.ticker, today - relativedelta(months=6)) if inv.ticker else None,
+            metrics["current_value"]
+        )
+        xirr_12m = calculate_historical_investment_xirr(
+            transactions, today - relativedelta(years=1), today,
+            get_historical_rate(inv.ticker, today - relativedelta(years=1)) if inv.ticker else None,
+            metrics["current_value"]
         )
 
         # Tag exited investments with tiny residuals (rounding errors)
@@ -419,6 +468,9 @@ def index():
                 "purchase_value": metrics["purchase_value"],
                 "current_value": metrics["current_value"],
                 "xirr_value": xirr_value,
+                "xirr_3m": xirr_3m,
+                "xirr_6m": xirr_6m,
+                "xirr_12m": xirr_12m,
                 "gain": metrics["gain"],
                 "is_exited": is_exited,
             }
@@ -426,13 +478,41 @@ def index():
 
     # Calculate combined XIRR for all ticker-based USD investments
     if total_current_usd_ticker > 0:
-        usd_ticker_cash_flows.append((datetime.date.today(), total_current_usd_ticker))
+        usd_ticker_cash_flows.append((today, total_current_usd_ticker))
+        # Aggregates for historical windows
+        if usd_3m_start_val > 0:
+            usd_3m_flows.insert(0, (date_3m, -usd_3m_start_val))
+            usd_3m_flows.append((today, total_current_usd_ticker))
+        if usd_6m_start_val > 0:
+            usd_6m_flows.insert(0, (date_6m, -usd_6m_start_val))
+            usd_6m_flows.append((today, total_current_usd_ticker))
+        if usd_12m_start_val > 0:
+            usd_12m_flows.insert(0, (date_12m, -usd_12m_start_val))
+            usd_12m_flows.append((today, total_current_usd_ticker))
+
     usd_ticker_xirr = calculate_xirr_from_cash_flows(usd_ticker_cash_flows)
+    usd_3m_xirr = calculate_xirr_from_cash_flows(usd_3m_flows)
+    usd_6m_xirr = calculate_xirr_from_cash_flows(usd_6m_flows)
+    usd_12m_xirr = calculate_xirr_from_cash_flows(usd_12m_flows)
 
     # Calculate combined XIRR for all ticker-based INR investments
     if total_current_inr_ticker > 0:
-        inr_ticker_cash_flows.append((datetime.date.today(), total_current_inr_ticker))
+        inr_ticker_cash_flows.append((today, total_current_inr_ticker))
+        # Aggregates for historical windows
+        if inr_3m_start_val > 0:
+            inr_3m_flows.insert(0, (date_3m, -inr_3m_start_val))
+            inr_3m_flows.append((today, total_current_inr_ticker))
+        if inr_6m_start_val > 0:
+            inr_6m_flows.insert(0, (date_6m, -inr_6m_start_val))
+            inr_6m_flows.append((today, total_current_inr_ticker))
+        if inr_12m_start_val > 0:
+            inr_12m_flows.insert(0, (date_12m, -inr_12m_start_val))
+            inr_12m_flows.append((today, total_current_inr_ticker))
+
     inr_ticker_xirr = calculate_xirr_from_cash_flows(inr_ticker_cash_flows)
+    inr_3m_xirr = calculate_xirr_from_cash_flows(inr_3m_flows)
+    inr_6m_xirr = calculate_xirr_from_cash_flows(inr_6m_flows)
+    inr_12m_xirr = calculate_xirr_from_cash_flows(inr_12m_flows)
 
     # Fetch USD to INR conversion rate
     usd_to_inr_rate = get_usd_to_inr_rate()
@@ -530,10 +610,16 @@ def index():
         total_current_usd_ticker_str=total_current_usd_ticker_str,
         total_gain_usd_ticker_str=total_gain_usd_ticker_str,
         usd_ticker_xirr=usd_ticker_xirr,
+        usd_3m_xirr=usd_3m_xirr,
+        usd_6m_xirr=usd_6m_xirr,
+        usd_12m_xirr=usd_12m_xirr,
         total_purchase_inr_ticker_str=total_purchase_inr_ticker_str,
         total_current_inr_ticker_str=total_current_inr_ticker_str,
         total_gain_inr_ticker_str=total_gain_inr_ticker_str,
         inr_ticker_xirr=inr_ticker_xirr,
+        inr_3m_xirr=inr_3m_xirr,
+        inr_6m_xirr=inr_6m_xirr,
+        inr_12m_xirr=inr_12m_xirr,
         grand_total_in_inr_str=grand_total_in_inr_str,
         grand_total_purchase_in_inr_str=grand_total_purchase_in_inr_str,
         grand_total_gain_in_inr_str=grand_total_gain_in_inr_str,
