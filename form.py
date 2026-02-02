@@ -44,12 +44,12 @@ class TransactionForm(FlaskForm):
         format="%Y-%m-%d",  # Expected date format
         validators=[Optional()],
     )
-    buy_quantity = DecimalField("Buy Quantity", validators=[Optional()], places=4)
-    buy_rate = DecimalField("Buy Rate", validators=[Optional()], places=4)
+    buy_quantity = DecimalField("Buy Quantity (Optional for Payments)", validators=[Optional()], places=4)
+    buy_rate = DecimalField("Buy Rate / Payment Amount", validators=[Optional()], places=4)
     description = StringField("Description", validators=[Optional(), Length(max=200)])
-    sell_date = DateField("Sell Date", format="%Y-%m-%d", validators=[Optional()])
-    sell_quantity = DecimalField("Sell Quantity", validators=[Optional()], places=4)
-    sell_rate = DecimalField("Sell Rate", validators=[Optional()], places=4)
+    sell_date = DateField("Sell/Payout Date", format="%Y-%m-%d", validators=[Optional()])
+    sell_quantity = DecimalField("Sell Quantity (Optional for Payouts)", validators=[Optional()], places=4)
+    sell_rate = DecimalField("Sell Rate / Payout Amount", validators=[Optional()], places=4)
     gain_date = DateField("Gain Date", format="%Y-%m-%d", validators=[Optional()])
     gain_amount = DecimalField("Gain Amount", validators=[Optional()], places=2)
     submit = SubmitField("Save Transaction")
@@ -78,25 +78,26 @@ class TransactionForm(FlaskForm):
         ]
         gain_fields = [self.gain_date.data, self.gain_amount.data]
 
-        is_buy_partial = any(f is not None for f in buy_fields) and not all(
-            f is not None for f in buy_fields
-        )
-        is_sell_partial = any(f is not None for f in sell_fields) and not all(
-            f is not None for f in sell_fields
-        )
-        is_gain_partial = any(f is not None for f in gain_fields) and not all(
-            f is not None for f in gain_fields
-        )
+        # Custom logic for Buy: Date and Rate/Amount are mandatory together. Quantity is optional.
+        buy_provided = any(f is not None for f in [self.buy_date.data, self.buy_rate.data, self.buy_quantity.data])
+        is_buy_partial = buy_provided and (self.buy_date.data is None or self.buy_rate.data is None)
+        
+        is_sell_partial = any(f is not None for f in sell_fields) and not all(f is not None for f in sell_fields)
+        is_gain_partial = any(f is not None for f in gain_fields) and not all(f is not None for f in gain_fields)
 
         has_error = False
         if is_buy_partial:
             self.buy_date.errors.append(
-                "All 'Buy' fields (Date, Quantity, Rate) must be filled together."
+                "Both 'Buy Date' and 'Buy Rate/Amount' must be filled."
             )
             has_error = True
+        # Custom logic for Sell: Date and Rate/Amount are mandatory together. Quantity is optional.
+        sell_provided = any(f is not None for f in [self.sell_date.data, self.sell_rate.data, self.sell_quantity.data])
+        is_sell_partial = sell_provided and (self.sell_date.data is None or self.sell_rate.data is None)
+
         if is_sell_partial:
             self.sell_date.errors.append(
-                "All 'Sell' fields (Date, Quantity, Rate) must be filled together."
+                "Both 'Sell Date' and 'Sell Rate/Payout Amount' must be filled."
             )
             has_error = True
         if is_gain_partial:
@@ -105,13 +106,11 @@ class TransactionForm(FlaskForm):
             )
             has_error = True
 
-        is_any_complete = any(
-            [
-                all(f is not None for f in buy_fields),
-                all(f is not None for f in sell_fields),
-                all(f is not None for f in gain_fields),
-            ]
-        )
+        is_buy_complete = self.buy_date.data is not None and self.buy_rate.data is not None
+        is_sell_complete = self.sell_date.data is not None and self.sell_rate.data is not None
+        is_gain_complete = all(f is not None for f in gain_fields)
+
+        is_any_complete = any([is_buy_complete, is_sell_complete, is_gain_complete])
 
         if not is_any_complete and not has_error:
             self.submit.errors.append(
