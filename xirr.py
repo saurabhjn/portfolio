@@ -21,10 +21,16 @@ def generate_cash_flows_from_transactions(
     """
     cash_flows = []
     for tx in transactions:
-        if tx.buy_date and tx.buy_quantity is not None and tx.buy_rate is not None:
-            cash_flows.append((tx.buy_date, -(tx.buy_quantity * tx.buy_rate)))
-        if tx.sell_date and tx.sell_quantity is not None and tx.sell_rate is not None:
-            cash_flows.append((tx.sell_date, tx.sell_quantity * tx.sell_rate))
+        if tx.buy_date and tx.buy_rate is not None:
+            if tx.buy_quantity is not None and tx.buy_quantity > 0:
+                cash_flows.append((tx.buy_date, -(tx.buy_quantity * tx.buy_rate)))
+            else:
+                cash_flows.append((tx.buy_date, -tx.buy_rate))
+        if tx.sell_date and tx.sell_rate is not None:
+            if tx.sell_quantity is not None and tx.sell_quantity > 0:
+                cash_flows.append((tx.sell_date, tx.sell_quantity * tx.sell_rate))
+            else:
+                cash_flows.append((tx.sell_date, tx.sell_rate))
         if tx.gain_date and tx.gain_amount is not None:
             cash_flows.append((tx.gain_date, tx.gain_amount))
     return cash_flows
