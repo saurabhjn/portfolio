@@ -2,7 +2,9 @@
 {% block content %}
 <div class="mb-4">
     <h1>Retirement Planner</h1>
-    <p class="text-muted">Projections for US Market Portfolio sustaining your lifestyle at a 4% Withdrawal Rate.</p>
+    <p class="text-muted">Projections using <strong>Liability Matching</strong>: Your target is the Net Present Value
+        (NPV) of all future expenses, calculated in <strong>today's dollars</strong> using <strong>Real Growth
+            Rates</strong> (net of inflation).</p>
 </div>
 
 <div class="row mb-4">
@@ -26,8 +28,9 @@
             <div class="card-body">
                 <h6 class="card-subtitle mb-2 text-muted text-center">Target Corpus Details (Today's $)</h6>
                 <div class="d-flex justify-content-between mb-1">
-                    <span>Lifestyle (4% SWR):</span>
-                    <span class="fw-bold">{{ (lifestyle_expense_usd / swr) | format_currency(Currency.USD) }}</span>
+                    <span>Future Liabilities (NPV):</span>
+                    <span class="fw-bold">{{ (required_corpus - medical_corpus_usd) | format_currency(Currency.USD)
+                        }}</span>
                 </div>
                 <div class="d-flex justify-content-between mb-1">
                     <span>Medical Corpus:</span>
@@ -38,6 +41,21 @@
                     <span>Total Target:</span>
                     <span>{{ required_corpus | format_currency(Currency.USD) }}</span>
                 </div>
+
+                <hr class="my-2">
+                {% if gap_usd > 0 %}
+                <div class="text-danger text-center">
+                    <div class="small fw-bold">Gap to Target (Shortfall)</div>
+                    <div class="h5 mb-0">{{ gap_usd | format_currency(Currency.USD) }}</div>
+                    <div class="small text-muted">({{ gap_inr | format_currency(Currency.INR) }})</div>
+                </div>
+                {% else %}
+                <div class="text-success text-center">
+                    <div class="small fw-bold">Start Retirement Today!</div>
+                    <div class="small">You have a surplus of {{ (current_portfolio - required_corpus) |
+                        format_currency(Currency.USD) }}</div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -75,18 +93,29 @@
                 <div class="card-body">
                     <form class="row g-3 align-items-end" method="GET">
                         <div class="col-md-3">
-                            <label class="form-label small">Pre-Retirement Growth (%)</label>
+                            <label class="form-label small d-flex align-items-center justify-content-between">
+                                <span>
+                                    Pre-Retirement Real Growth (%)
+                                    <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip"
+                                        title="Expected annual return net of inflation. Historical US Equities real return is approx 7%. Use your recent XIRR as a guide (e.g. Portfolio XIRR - Inflation Rate)."></i>
+                                </span>
+                                {% if us_xirr %}
+                                <span class="badge bg-light text-dark border ms-2">Portfolio XIRR: {{ us_xirr | round(1)
+                                    }}%</span>
+                                {% endif %}
+                            </label>
                             <div class="input-group input-group-sm">
                                 <input type="number" step="0.1" name="pre_growth" class="form-control"
                                     value="{{ (pre_growth * 100) | round(1) }}">
                                 <span class="input-group-text">%</span>
                             </div>
-                            {% if us_xirr %}
-                            <div class="form-text xsmall">Portfolio XIRR: {{ us_xirr | round(1) }}%</div>
-                            {% endif %}
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label small">Post-Retirement Growth (%)</label>
+                            <label class="form-label small d-flex align-items-center">
+                                Post-Retirement Real Growth (%)
+                                <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip"
+                                    title="Expected return net of inflation after you stop active investing. Recommended: 3-5% (assumes a more conservative mix of blue-chips/debt)."></i>
+                            </label>
                             <div class="input-group input-group-sm">
                                 <input type="number" step="0.1" name="post_growth" class="form-control"
                                     value="{{ (post_growth * 100) | round(1) }}">
@@ -94,12 +123,8 @@
                             </div>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label small">Safe Withdrawal Rate (%)</label>
-                            <div class="input-group input-group-sm">
-                                <input type="number" step="0.1" name="swr" class="form-control"
-                                    value="{{ (swr * 100) | round(1) }}">
-                                <span class="input-group-text">%</span>
-                            </div>
+                            <label class="form-label small">Model Strategy</label>
+                            <div class="form-control form-control-sm bg-light">Liability Matching (NPV)</div>
                         </div>
                         <div class="col-md-3">
                             <button type="submit" class="btn btn-primary btn-sm w-100">Update Simulation</button>
@@ -175,13 +200,12 @@
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             const ctx = document.getElementById('retirementChart').getContext('2d');
-            const yearlyData = {{ yearly_data | tojson
+            const data = {{ yearly_data | tojson
         }};
 
-        const labels = yearlyData.map(d => d.year);
-        const portfolioValues = yearlyData.map(d => d.portfolio);
-        const requiredValues = yearlyData.map(d => d.required_corpus);
-        const outflows = yearlyData.map(d => d.outflow);
+        const labels = data.map(d => d.year);
+        const portfolioValues = data.map(d => d.portfolio);
+        const requiredValues = data.map(d => d.required_corpus);
 
         new Chart(ctx, {
             type: 'line',
@@ -236,6 +260,12 @@
                 }
             }
         });
-});
+
+        // Initialize tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
     </script>
     {% endblock %}

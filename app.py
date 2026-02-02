@@ -1002,8 +1002,7 @@ def retirement_projection():
     post_growth_param = request.args.get('post_growth')
     post_growth = Decimal(post_growth_param) / 100 if post_growth_param else Decimal("0.065")
     
-    swr_param = request.args.get('swr')
-    swr = Decimal(swr_param) / 100 if swr_param else Decimal("0.04")
+    swr = Decimal("0.04") # Keep as default for display if needed, but not for target calculation
     
     # Emergency medical corpus - ₹50L
     medical_corpus_inr = Decimal("5000000")
@@ -1043,82 +1042,94 @@ def retirement_projection():
         else: # One-time
             retirement_yearly_outflow_usd += amt_usd
 
-    # If no retirement expenses defined yet, use the previous defaults as a placeholder
+    # --- NPV Based Target Calculation ---
+    projection_months = 50 * 12 # Extend to 50 years (approx age 90-100)
+    start_date = datetime.date.today().replace(day=1)
+    
+    liability_timeline_usd = [Decimal(0)] * projection_months
+    for m_idx in range(projection_months):
+        m_date = start_date + relativedelta(months=m_idx)
+        for exp in expenses: # Check ALL expenses, not just retirement
+            occurs = False
+            if not exp.is_recurring:
+                if exp.date.year == m_date.year and exp.date.month == m_date.month: occurs = True
+            elif exp.recurrence_period == RecurrencePeriod.MONTHLY:
+                if exp.date <= m_date and (not exp.end_date or m_date <= exp.end_date): occurs = True
+            elif exp.recurrence_period == RecurrencePeriod.YEARLY:
+                if exp.date.month == m_date.month and exp.date <= m_date and (not exp.end_date or m_date <= exp.end_date): occurs = True
+            elif exp.recurrence_period == RecurrencePeriod.EVERY_5_YEARS:
+                diff = (m_date.year - exp.date.year) * 12 + (m_date.month - exp.date.month)
+                if diff >= 0 and diff % 60 == 0 and (not exp.end_date or m_date <= exp.end_date): occurs = True
+            
+            if occurs:
+                amt_usd = exp.amount
+                if exp.currency == Currency.INR: amt_usd /= usd_to_inr
+                elif exp.currency == Currency.EUR: amt_usd *= eur_to_usd
+                elif exp.currency == Currency.GBP: amt_usd *= gbp_to_usd
+                liability_timeline_usd[m_idx] += amt_usd
+    
+    # If no retirement expenses defined, use the placeholder on the timeline for later years
     if not retirement_lifestyle_expenses:
         yearly_lifestyle_inr = (Decimal("180000") * 12) + Decimal("70000")
         trips_usd = Decimal("3000") + (Decimal("2500") * eur_to_usd) + (Decimal("300000") / usd_to_inr)
-        retirement_yearly_outflow_usd = (yearly_lifestyle_inr / usd_to_inr) + trips_usd
+        placeholder_monthly = ((yearly_lifestyle_inr / usd_to_inr) + trips_usd) / 12
+        # Only apply placeholder if the timeline is otherwise empty for that month
+        for i in range(projection_months):
+            if liability_timeline_usd[i] == 0:
+                liability_timeline_usd[i] = placeholder_monthly
 
-    required_corpus_usd = (retirement_yearly_outflow_usd / swr) + medical_corpus_usd
+    # Calculate Target Corpus (NPV) for each month
+    # Target(m) = Medical + sum_{i=m to End} [ Outflow(i) / (1 + post_growth_monthly)^(i-m) ]
+    # Use true CAGR for monthly rate: (1 + r)^(1/12) - 1
+    post_growth_monthly = (Decimal("1") + post_growth) ** (Decimal("1") / Decimal("12")) - Decimal("1")
+    monthly_targets = [Decimal(0)] * projection_months
+    for m_idx in range(projection_months):
+        npv = medical_corpus_usd
+        for future_idx in range(m_idx, projection_months):
+            discount_factor = (Decimal(1) + post_growth_monthly)**(future_idx - m_idx)
+            npv += liability_timeline_usd[future_idx] / discount_factor
+        monthly_targets[m_idx] = npv
 
-    # Projection (Monthly for precision)
-    projection_months = 40 * 12
+    required_corpus_usd = monthly_targets[0] # For initial display
+
+    # Projection (Monthly for precision) using the same timeline
     start_date = datetime.date.today().replace(day=1)
     yearly_data_map = {}
     active_portfolio = total_current_usd
     retirement_date = None
     
-    # Calculate monthly rates (Linear division to match SWR withdrawal logic)
-    pre_growth_monthly = pre_growth / 12
-    post_growth_monthly = post_growth / 12
+    # Calculate monthly rates using true CAGR logic
+    pre_growth_monthly = (Decimal("1") + pre_growth) ** (Decimal("1") / Decimal("12")) - Decimal("1")
+    # post_growth_monthly is already calculated above for NPV
 
     for m_idx in range(projection_months):
         current_m_date = start_date + relativedelta(months=m_idx)
         year_val = current_m_date.year
         
         if year_val not in yearly_data_map:
-            yearly_data_map[year_val] = {"portfolio": Decimal(0), "outflow": Decimal(0), "required_corpus": required_corpus_usd}
+            yearly_data_map[year_val] = {"portfolio": Decimal(0), "outflow": Decimal(0), "required_corpus": monthly_targets[m_idx]}
 
-        # Monthly Outflow (Pre-retirement education/other)
-        monthly_outflow_usd = Decimal(0)
-        non_retirement_exps = [e for e in expenses if e.category != ExpenseCategory.RETIREMENT]
-        
-        for exp in non_retirement_exps:
-            # Check if this expense applies to this specific month
-            exp_occurs = False
-            if not exp.is_recurring:
-                if exp.date.year == current_m_date.year and exp.date.month == current_m_date.month:
-                    exp_occurs = True
-            elif exp.recurrence_period == RecurrencePeriod.MONTHLY:
-                if exp.date <= current_m_date and (not exp.end_date or current_m_date <= exp.end_date):
-                    exp_occurs = True
-            elif exp.recurrence_period == RecurrencePeriod.YEARLY:
-                if exp.date.month == current_m_date.month and exp.date <= current_m_date and (not exp.end_date or current_m_date <= exp.end_date):
-                    exp_occurs = True
-            elif exp.recurrence_period == RecurrencePeriod.EVERY_5_YEARS:
-                # Occurs every 60 months starting from exp.date
-                diff = (current_m_date.year - exp.date.year) * 12 + (current_m_date.month - exp.date.month)
-                if diff >= 0 and diff % 60 == 0 and (not exp.end_date or current_m_date <= exp.end_date):
-                    exp_occurs = True
-            
-            if exp_occurs:
-                amt_usd = exp.amount
-                if exp.currency == Currency.INR: amt_usd /= usd_to_inr
-                elif exp.currency == Currency.EUR: amt_usd *= eur_to_usd
-                elif exp.currency == Currency.GBP: amt_usd *= gbp_to_usd
-                monthly_outflow_usd += amt_usd
+        # Monthly Outflow from the Liability Timeline
+        effective_monthly_outflow = liability_timeline_usd[m_idx]
 
         # Growth & Retirement Check
         is_retired = (retirement_date is not None and current_m_date >= retirement_date)
         
         # If not already retired, check if we hit the target THIS month
-        if retirement_date is None and active_portfolio >= required_corpus_usd:
+        # Target is now dynamic based on remaining liabilities (NPV)
+        if retirement_date is None and active_portfolio >= monthly_targets[m_idx]:
             retirement_date = current_m_date
             is_retired = True
 
         growth_rate = post_growth_monthly if is_retired else pre_growth_monthly
         growth = active_portfolio * growth_rate
         
-        effective_monthly_outflow = monthly_outflow_usd
-        if is_retired:
-            effective_monthly_outflow += (retirement_yearly_outflow_usd / 12)
-
         active_portfolio = active_portfolio + growth - effective_monthly_outflow
         
         # Aggregate to yearly for the UI
         yearly_data_map[year_val]["portfolio"] = active_portfolio # End of year/latest month balance
         yearly_data_map[year_val]["outflow"] += effective_monthly_outflow
-        yearly_data_map[year_val]["can_retire"] = active_portfolio >= required_corpus_usd
+        yearly_data_map[year_val]["can_retire"] = active_portfolio >= monthly_targets[m_idx]
 
     # Convert map to sorted list for template
     yearly_data = []
@@ -1133,12 +1144,18 @@ def retirement_projection():
         })
 
     retirement_date_str = retirement_date.strftime("%B %Y") if retirement_date else None
+    
+    # Calculate Gaps
+    gap_usd = max(Decimal(0), required_corpus_usd - total_current_usd)
+    gap_inr = gap_usd * usd_to_inr
 
     return render_template(
         "retirement_projection.html",
         yearly_data=yearly_data,
         current_portfolio=total_current_usd,
         required_corpus=required_corpus_usd,
+        gap_usd=gap_usd,
+        gap_inr=gap_inr,
         retirement_date=retirement_date_str,
         medical_corpus_usd=medical_corpus_usd,
         lifestyle_expense_usd=retirement_yearly_outflow_usd,
