@@ -10,194 +10,242 @@
 </div>
 
 {% if portfolio_data %}
-<div class="d-flex justify-content-start align-items-center mb-2" id="toggle-small-investments-container"
-    style="display: none;">
-    <button id="toggle-small-investments-btn" class="btn btn-sm btn-outline-secondary py-0 px-1"
-        type="button">+</button>
-    <span class="ms-2 small-investments-toggle-text"></span>
+<div class="d-flex flex-wrap justify-content-start align-items-center mb-2" id="toggle-containers">
+    <div id="toggle-small-investments-container" style="display: none;" class="me-3 mb-2">
+        <button id="toggle-small-investments-btn" class="btn btn-sm btn-outline-secondary py-0 px-1"
+            type="button">+</button>
+        <span class="ms-2 small-investments-toggle-text small"></span>
+    </div>
+    <div id="toggle-mobile-cols-container" class="d-md-none mb-2">
+        <button id="toggle-mobile-cols-btn" class="btn btn-sm btn-outline-info py-0 px-1" type="button">+</button>
+        <span class="ms-2 small">Show all columns</span>
+    </div>
 </div>
-<table class="table table-striped table-hover" id="investments-table">
-    <thead class="table-dark">
-        <tr>
-            <th>Ticker</th>
-            <th>Investment Name</th>
-            <th>Quantity</th>
-            <th>Current Rate</th>
-            <th>Purchase Value</th>
-            <th>Current Value</th>
-            <th>Gain</th>
-            <th>XIRR <button id="toggle-cols-btn" class="btn btn-sm btn-outline-light py-0 px-1 ms-1"
-                    type="button">+</button></th>
-            <th class="collapsible-col">5-Year Return</th>
-            <th class="collapsible-col">10-Year Return</th>
-            <th class="collapsible-col">Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for item in portfolio_data %}
-        <tr {% if (item.current_value is not none and item.current_value < 100) or item.is_exited
-            %}class="collapsible-row-small-value" {% endif %}>
-            <td>{{ item.investment.ticker }}</td>
-            <td>
-                <a href="{{ url_for('view_transactions', investment_name=item.investment.investment_name) }}">{{
-                    item.investment.investment_name }}</a>
-            </td>
-            <td class="text-end">
-                {% if item.investment.ticker %}
-                {{ item.total_quantity | format_quantity }}
-                {% else %}
-                -
-                {% endif %}
-            </td>
-            <td class="text-end">
-                {% if item.current_rate is not none %}
-                {{ item.current_rate | format_currency(item.investment.currency) }}
-                {% else %}
-                -
-                {% endif %}
-            </td>
-            <td class="text-end">
-                {{ item.purchase_value | format_currency_nodot(item.investment.currency) }}
-            </td>
-            <td class="text-end">
-                {% if item.current_value is not none %}
-                {{ item.current_value | format_currency_nodot(item.investment.currency) }}
-                {% else %}
-                -
-                {% endif %}
-            </td>
-            <td class="text-end">
-                {% if item.gain is not none %}
-                {{ item.gain | format_currency_nodot(item.investment.currency) }}
-                {% else %}
-                -
-                {% endif %}
-            </td>
-            <td class="text-end">
-                {% if item.xirr_value is not none %}
-                {{ "%.2f"|format(item.xirr_value) }}%
-                {% else %}
-                -
-                {% endif %}
-            </td>
-            <td class="text-end collapsible-col">
-                {% if item.investment.five_year_annualised_return is not none %}
-                {{ item.investment.five_year_annualised_return }}%
-                {% else %}
-                -
-                {% endif %}
-            </td>
-            <td class="text-end collapsible-col">
-                {% if item.investment.ten_year_annualised_return is not none %}
-                {{ item.investment.ten_year_annualised_return }}%
-                {% else %}
-                -
-                {% endif %}
-            </td>
-            <td class="collapsible-col">
-                <a href="{{ url_for('edit_investment', investment_index=loop.index0) }}"
-                    class="btn btn-sm btn-outline-secondary">Edit</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-    <tfoot>
-        <tr class="table-group-divider">
-            <td colspan="4" class="align-bottom"><strong>US Market Investments</strong></td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_purchase_usd_ticker_str }}</strong>
-            </td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_current_usd_ticker_str }}</strong>
-            </td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_gain_usd_ticker_str }}</strong>
-            </td>
-            <td class="text-end align-bottom">
-                {% if usd_ticker_xirr is not none %}
-                <strong>{{ "%.2f"|format(usd_ticker_xirr) }}%</strong>
-                {% endif %}
-            </td>
-            <td colspan="3" class="collapsible-col"></td>
-        </tr>
-        <tr>
-            <td colspan="4" class="align-bottom"><strong>Total USD Investments</strong></td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_purchase_usd_str }}</strong>
-            </td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_current_usd_str }}</strong>
-            </td>
-            <td colspan="2"></td>
-            <td colspan="3" class="collapsible-col"></td>
-        </tr>
-        <tr>
-            <td colspan="4" class="align-bottom"><strong>India Market Investments</strong></td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_purchase_inr_ticker_str }}</strong>
-            </td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_current_inr_ticker_str }}</strong>
-            </td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_gain_inr_ticker_str }}</strong>
-            </td>
-            <td class="text-end align-bottom">
-                {% if inr_ticker_xirr is not none %}
-                <strong>{{ "%.2f"|format(inr_ticker_xirr) }}%</strong>
-                {% endif %}
-            </td>
-            <td colspan="3" class="collapsible-col"></td>
-        </tr>
-        <tr>
-            <td colspan="4" class="align-bottom"><strong>Total INR Investments</strong></td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_purchase_inr_str }}</strong>
-            </td>
-            <td class="text-end align-bottom">
-                <strong>{{ total_current_inr_str }}</strong>
-            </td>
-            <td colspan="2"></td>
-            <td colspan="3" class="collapsible-col"></td>
-        </tr>
-        <tr class="table-group-divider">
-            <td colspan="4" class="align-bottom"><strong>Total Portfolio Value (in INR)</strong></td>
-            <td class="text-end align-bottom">
-                <strong>
-                    {% if grand_total_purchase_in_inr_str %}
-                    {{ grand_total_purchase_in_inr_str }}
+<div class="table-responsive">
+    <table class="table table-striped table-hover table-sm" id="investments-table">
+        <thead class="table-dark">
+            <tr>
+                <th class="d-none d-md-table-cell">Ticker</th>
+                <th>Investment Name</th>
+                <th class="d-none d-lg-table-cell">Quantity</th>
+                <th class="d-none d-lg-table-cell">Current Rate</th>
+                <th class="d-none d-md-table-cell">Purchase Value</th>
+                <th>Current Value</th>
+                <th class="d-none d-sm-table-cell">Gain</th>
+                <th>XIRR <button id="toggle-cols-btn" class="btn btn-sm btn-outline-light py-0 px-1 ms-1"
+                        type="button">+</button></th>
+                <th class="collapsible-col">3m XIRR</th>
+                <th class="collapsible-col">6m XIRR</th>
+                <th class="collapsible-col">12m XIRR</th>
+                <th class="collapsible-col">5y Return</th>
+                <th class="collapsible-col">10y Return</th>
+                <th class="collapsible-col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in portfolio_data %}
+            <tr {% if (item.current_value is not none and item.current_value < 100) or item.is_exited
+                %}class="collapsible-row-small-value" {% endif %}>
+                <td class="d-none d-md-table-cell">{{ item.investment.ticker }}</td>
+                <td>
+                    <a href="{{ url_for('view_transactions', investment_name=item.investment.investment_name) }}">{{
+                        item.investment.investment_name }}</a>
+                </td>
+                <td class="text-end d-none d-lg-table-cell">
+                    {% if item.investment.ticker %}
+                    {{ item.total_quantity | format_quantity }}
                     {% else %}
                     -
                     {% endif %}
-                </strong>
-            </td>
-            <td class="text-end align-bottom">
-                <strong>
-                    {% if grand_total_in_inr_str %}
-                    {{ grand_total_in_inr_str }}
+                </td>
+                <td class="text-end d-none d-lg-table-cell">
+                    {% if item.current_rate is not none %}
+                    {{ item.current_rate | format_currency(item.investment.currency) }}
                     {% else %}
                     -
                     {% endif %}
-                </strong>
-            </td>
-            <td class="text-end align-bottom">
-                <strong>
-                    {% if grand_total_gain_in_inr_str %}
-                    {{ grand_total_gain_in_inr_str }}
+                </td>
+                <td class="text-end d-none d-md-table-cell">
+                    {{ item.purchase_value | format_currency_nodot(item.investment.currency) }}
+                </td>
+                <td class="text-end">
+                    {% if item.current_value is not none %}
+                    {{ item.current_value | format_currency_nodot(item.investment.currency) }}
                     {% else %}
                     -
                     {% endif %}
-                </strong>
-            </td>
-            <td class="text-end align-bottom">
-                {% if overall_xirr is not none %}
-                <strong>{{ "%.2f"|format(overall_xirr) }}%</strong>
-                {% endif %}
-            </td>
-            <td colspan="3" class="collapsible-col"></td>
-        </tr>
-    </tfoot>
-</table>
+                </td>
+                <td class="text-end d-none d-sm-table-cell">
+                    {% if item.gain is not none %}
+                    {{ item.gain | format_currency_nodot(item.investment.currency) }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="text-end">
+                    {% if item.xirr_value is not none %}
+                    {{ "%.2f"|format(item.xirr_value) }}%
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="text-end collapsible-col">
+                    {% if item.xirr_3m is not none %}{{ "%.2f"|format(item.xirr_3m) }}%{% else %}-{% endif %}
+                </td>
+                <td class="text-end collapsible-col">
+                    {% if item.xirr_6m is not none %}{{ "%.2f"|format(item.xirr_6m) }}%{% else %}-{% endif %}
+                </td>
+                <td class="text-end collapsible-col">
+                    {% if item.xirr_12m is not none %}{{ "%.2f"|format(item.xirr_12m) }}%{% else %}-{% endif %}
+                </td>
+                <td class="text-end collapsible-col">
+                    {% if item.investment.five_year_annualised_return is not none %}
+                    {{ item.investment.five_year_annualised_return }}%
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="text-end collapsible-col">
+                    {% if item.investment.ten_year_annualised_return is not none %}
+                    {{ item.investment.ten_year_annualised_return }}%
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="collapsible-col">
+                    <a href="{{ url_for('edit_investment', investment_index=loop.index0) }}"
+                        class="btn btn-sm btn-outline-secondary">Edit</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr class="table-group-divider">
+                <td class="d-none d-md-table-cell"></td>
+                <td><strong>US Market Investments</strong></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="text-end align-bottom d-none d-md-table-cell">
+                    <strong>{{ total_purchase_usd_ticker_str }}</strong>
+                </td>
+                <td class="text-end align-bottom">
+                    <strong>{{ total_current_usd_ticker_str }}</strong>
+                </td>
+                <td class="text-end align-bottom d-none d-sm-table-cell">
+                    <strong>{{ total_gain_usd_ticker_str }}</strong>
+                </td>
+                <td class="text-end align-bottom">
+                    {% if usd_ticker_xirr is not none %}
+                    <strong>{{ "%.2f"|format(usd_ticker_xirr) }}%</strong>
+                    {% endif %}
+                </td>
+                <td class="text-end align-bottom collapsible-col"><strong>{% if usd_3m_xirr is not none %}{{
+                        "%.2f"|format(usd_3m_xirr) }}%{% endif %}</strong></td>
+                <td class="text-end align-bottom collapsible-col"><strong>{% if usd_6m_xirr is not none %}{{
+                        "%.2f"|format(usd_6m_xirr) }}%{% endif %}</strong></td>
+                <td class="text-end align-bottom collapsible-col"><strong>{% if usd_12m_xirr is not none %}{{
+                        "%.2f"|format(usd_12m_xirr) }}%{% endif %}</strong></td>
+                <td colspan="3" class="collapsible-col"></td>
+            </tr>
+            <tr>
+                <td class="d-none d-md-table-cell"></td>
+                <td><strong>Total USD Investments</strong></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="text-end align-bottom d-none d-md-table-cell">
+                    <strong>{{ total_purchase_usd_str }}</strong>
+                </td>
+                <td class="text-end align-bottom">
+                    <strong>{{ total_current_usd_str }}</strong>
+                </td>
+                <td class="d-none d-sm-table-cell"></td>
+                <td class="d-none d-sm-table-cell"></td>
+                <td colspan="6" class="collapsible-col"></td>
+            </tr>
+            <tr>
+                <td class="d-none d-md-table-cell"></td>
+                <td><strong>India Market Investments</strong></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="text-end align-bottom d-none d-md-table-cell">
+                    <strong>{{ total_purchase_inr_ticker_str }}</strong>
+                </td>
+                <td class="text-end align-bottom">
+                    <strong>{{ total_current_inr_ticker_str }}</strong>
+                </td>
+                <td class="text-end align-bottom d-none d-sm-table-cell">
+                    <strong>{{ total_gain_inr_ticker_str }}</strong>
+                </td>
+                <td class="text-end align-bottom">
+                    {% if inr_ticker_xirr is not none %}
+                    <strong>{{ "%.2f"|format(inr_ticker_xirr) }}%</strong>
+                    {% endif %}
+                </td>
+                <td class="text-end align-bottom collapsible-col"><strong>{% if inr_3m_xirr is not none %}{{
+                        "%.2f"|format(inr_3m_xirr) }}%{% endif %}</strong></td>
+                <td class="text-end align-bottom collapsible-col"><strong>{% if inr_6m_xirr is not none %}{{
+                        "%.2f"|format(inr_6m_xirr) }}%{% endif %}</strong></td>
+                <td class="text-end align-bottom collapsible-col"><strong>{% if inr_12m_xirr is not none %}{{
+                        "%.2f"|format(inr_12m_xirr) }}%{% endif %}</strong></td>
+                <td colspan="3" class="collapsible-col"></td>
+            </tr>
+            <tr>
+                <td class="d-none d-md-table-cell"></td>
+                <td><strong>Total INR Investments</strong></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="text-end align-bottom d-none d-md-table-cell">
+                    <strong>{{ total_purchase_inr_str }}</strong>
+                </td>
+                <td class="text-end align-bottom">
+                    <strong>{{ total_current_inr_str }}</strong>
+                </td>
+                <td class="d-none d-sm-table-cell"></td>
+                <td class="d-none d-sm-table-cell"></td>
+                <td colspan="6" class="collapsible-col"></td>
+            </tr>
+            <tr class="table-group-divider">
+                <td class="d-none d-md-table-cell"></td>
+                <td><strong>Total Portfolio Value (in INR)</strong></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="d-none d-lg-table-cell"></td>
+                <td class="text-end align-bottom d-none d-md-table-cell">
+                    <strong>
+                        {% if grand_total_purchase_in_inr_str %}
+                        {{ grand_total_purchase_in_inr_str }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </strong>
+                </td>
+                <td class="text-end align-bottom">
+                    <strong>
+                        {% if grand_total_in_inr_str %}
+                        {{ grand_total_in_inr_str }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </strong>
+                </td>
+                <td class="text-end align-bottom d-none d-sm-table-cell">
+                    <strong>
+                        {% if grand_total_gain_in_inr_str %}
+                        {{ grand_total_gain_in_inr_str }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </strong>
+                </td>
+                <td class="text-end align-bottom">
+                    {% if overall_xirr is not none %}
+                    <strong>{{ "%.2f"|format(overall_xirr) }}%</strong>
+                    {% endif %}
+                </td>
+                <td colspan="6" class="collapsible-col"></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
 {% else %}
 <div class="alert alert-info" role="alert">
     You have no investments yet. <a href="{{ url_for('add_investment') }}" class="alert-link">Add one now!</a>
@@ -221,6 +269,53 @@
     #investments-table.expanded .collapsible-col {
         display: table-cell;
         vertical-align: middle;
+    }
+
+    /* Mobile optimizations */
+    #investments-table th,
+    #investments-table td {
+        white-space: nowrap;
+    }
+
+    #investments-table td:nth-child(2) {
+        white-space: normal;
+        min-width: 130px;
+    }
+
+    @media (max-width: 576px) {
+        #investments-table td:nth-child(2) {
+            min-width: 100px;
+        }
+
+        .table-sm th,
+        .table-sm td {
+            padding-left: 0.2rem;
+            padding-right: 0.2rem;
+        }
+    }
+
+    @media (max-width: 768px) {
+        body {
+            font-size: 0.8rem;
+        }
+
+        h1 {
+            font-size: 1.3rem;
+        }
+
+        .table {
+            font-size: 0.72rem;
+        }
+
+        .btn-sm {
+            font-size: 0.65rem;
+            padding: 0.15rem 0.3rem;
+        }
+
+        /* Mobile toggle behavior */
+        #investments-table.show-all-cols .d-none {
+            display: table-cell !important;
+        }
     }
 </style>
 
@@ -265,6 +360,17 @@
             });
 
             updateText(); // Set initial text
+        }
+
+        // Mobile columns toggle
+        const toggleMobileBtn = document.getElementById('toggle-mobile-cols-btn');
+        if (toggleMobileBtn && table) {
+            toggleMobileBtn.addEventListener('click', function () {
+                table.classList.toggle('show-all-cols');
+                const isShown = table.classList.contains('show-all-cols');
+                toggleMobileBtn.textContent = isShown ? '−' : '+';
+                toggleMobileBtn.nextElementSibling.textContent = isShown ? 'Hide extra columns' : 'Show all columns';
+            });
         }
     });
 </script>
