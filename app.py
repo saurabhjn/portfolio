@@ -49,6 +49,7 @@ from encryption import encrypt_data, decrypt_data
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "a-default-secret-key-for-dev")
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 bootstrap = Bootstrap5(app)
 
