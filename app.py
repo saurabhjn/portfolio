@@ -1340,6 +1340,31 @@ def retirement_projection():
 
     education_expenses = [e for e in expenses if e.category == ExpenseCategory.EDUCATION]
 
+    def _expense_total(exp):
+        """Total cost of an expense over the projection horizon, in its
+        own currency (sum of all occurrences, bounded by end_date if set)."""
+        if not exp.is_recurring:
+            return exp.amount
+        count = 0
+        for m_idx in range(projection_months):
+            m_date = start_date + relativedelta(months=m_idx)
+            occurs = False
+            if exp.recurrence_period == RecurrencePeriod.MONTHLY:
+                if exp.date <= m_date and (not exp.end_date or m_date <= exp.end_date):
+                    occurs = True
+            elif exp.recurrence_period == RecurrencePeriod.YEARLY:
+                if exp.date.month == m_date.month and exp.date <= m_date and (not exp.end_date or m_date <= exp.end_date):
+                    occurs = True
+            elif exp.recurrence_period == RecurrencePeriod.EVERY_5_YEARS:
+                diff = (m_date.year - exp.date.year) * 12 + (m_date.month - exp.date.month)
+                if diff >= 0 and diff % 60 == 0 and (not exp.end_date or m_date <= exp.end_date):
+                    occurs = True
+            if occurs:
+                count += 1
+        return exp.amount * count
+
+    education_rows = [(e, _expense_total(e)) for e in education_expenses]
+
     return render_template(
         "retirement_projection.html",
         yearly_data=yearly_data,
@@ -1352,6 +1377,7 @@ def retirement_projection():
         lifestyle_expense_usd=retirement_yearly_outflow_usd,
         retirement_lifestyle_expenses=retirement_lifestyle_expenses,
         education_expenses=education_expenses,
+        education_rows=education_rows,
         include_education=include_education,
         swr=swr,
         pre_growth=pre_growth,
