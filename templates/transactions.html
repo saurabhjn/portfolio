@@ -31,61 +31,96 @@
     </thead>
     <tbody>
         {% for tx in transactions %}
+            {% set tx_index = loop.index0 %}
+            {% set n_sales = tx.sales | length %}
+            {% set span = n_sales if n_sales > 0 else 1 %}
+            {% for sale_loop in range(span) %}
+                {% set is_first = (sale_loop == 0) %}
+                {% set sale = tx.sales[sale_loop] if n_sales > 0 else None %}
         <tr>
-            <td>{{ tx.buy_date.strftime('%Y-%m-%d') if tx.buy_date else '-' }}</td>
+            {% if is_first %}
+            <td rowspan="{{ span }}">{{ tx.buy_date.strftime('%Y-%m-%d') if tx.buy_date else '-' }}</td>
             {% if investment.ticker %}
-            <td class="text-end">{{ tx.buy_quantity | format_quantity if tx.buy_quantity is not none else '-' }}</td>
+            <td rowspan="{{ span }}" class="text-end">{{ tx.buy_quantity | format_quantity if tx.buy_quantity is not none else '-' }}</td>
             {% endif %}
-            <td class="text-end">
+            <td rowspan="{{ span }}" class="text-end">
                 {% if tx.buy_rate is not none %}
                 {{ tx.buy_rate | format_currency(investment.currency) }}
                 {% else %}
                 -
                 {% endif %}
             </td>
-            <td>{{ tx.sell_date.strftime('%Y-%m-%d') if tx.sell_date else '-' }}</td>
+            {% endif %}
+
+            {% if sale %}
+            <td>{{ sale.sell_date.strftime('%Y-%m-%d') if sale.sell_date else '-' }}</td>
             {% if investment.ticker %}
-            <td class="text-end">{{ tx.sell_quantity | format_quantity if tx.sell_quantity is not none else '-' }}</td>
+            <td class="text-end">{{ sale.sell_quantity | format_quantity if sale.sell_quantity is not none else '-' }}</td>
             {% endif %}
             <td class="text-end">
-                {% if tx.sell_rate is not none %}
-                {{ tx.sell_rate | format_currency(investment.currency) }}
+                {% if sale.sell_rate is not none %}
+                {{ sale.sell_rate | format_currency(investment.currency) }}
                 {% else %}
                 -
                 {% endif %}
             </td>
             <td class="text-end">
-                {% if tx.gain_from_sale is not none %}
-                {# Check if the holding period is 2 years (730 days) or more for Long-Term Capital Gain (LTCG) #}
-                {% set is_long_term = tx.buy_date and tx.sell_date and (tx.sell_date - tx.buy_date).days >= 730 %}
+                {% if sale.gain_from_sale is not none %}
+                {% set is_long_term = tx.buy_date and sale.sell_date and (sale.sell_date - tx.buy_date).days >= 730 %}
                 <span class="{{ 'text-success' if is_long_term else '' }}" data-bs-toggle="tooltip"
                     title="{{ 'LTCG' if is_long_term else 'STCG' }}">
-                    {{ tx.gain_from_sale | format_currency(investment.currency) }}
+                    {{ sale.gain_from_sale | format_currency(investment.currency) }}
                 </span>
                 {% else %}
                 -
                 {% endif %}
             </td>
-            <td>{{ tx.gain_date.strftime('%Y-%m-%d') if tx.gain_date else '-' }}</td>
-            <td class="text-end">
+            {% else %}
+            <td>-</td>
+            {% if investment.ticker %}<td>-</td>{% endif %}
+            <td>-</td>
+            <td>-</td>
+            {% endif %}
+
+            {% if is_first %}
+            <td rowspan="{{ span }}">{{ tx.gain_date.strftime('%Y-%m-%d') if tx.gain_date else '-' }}</td>
+            <td rowspan="{{ span }}" class="text-end">
                 {% if tx.gain_amount is not none %}
                 {{ tx.gain_amount | format_currency(investment.currency) }}
                 {% else %}
                 -
                 {% endif %}
             </td>
-            <td>{{ tx.description if tx.description else '-' }}</td>
-            <td>
-                <a href="{{ url_for('edit_transaction', investment_name=investment.investment_name, transaction_index=loop.index0) }}"
-                    class="btn btn-sm btn-outline-secondary me-2">Edit</a>
-                <form
-                    action="{{ url_for('delete_transaction', investment_name=investment.investment_name, transaction_index=loop.index0) }}"
-                    method="POST" class="d-inline">
-                    <button type="submit" class="btn btn-sm btn-outline-danger"
-                        onclick="return confirm('Are you sure you want to delete this transaction?');">Delete</button>
-                </form>
+            <td rowspan="{{ span }}">{{ tx.description if tx.description else '-' }}</td>
+            {% endif %}
+            <td class="text-nowrap">
+                {% if sale %}
+                <div class="d-flex gap-1 mb-1">
+                    <a href="{{ url_for('edit_sale', investment_name=investment.investment_name, transaction_index=tx_index, sale_index=sale_loop) }}"
+                        class="btn btn-sm btn-outline-secondary">Edit Sale</a>
+                    <form action="{{ url_for('delete_sale', investment_name=investment.investment_name, transaction_index=tx_index, sale_index=sale_loop) }}"
+                        method="POST" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Delete this sale?');">×</button>
+                    </form>
+                </div>
+                {% endif %}
+                {% if is_first %}
+                <div class="d-flex gap-1">
+                    <a href="{{ url_for('edit_transaction', investment_name=investment.investment_name, transaction_index=tx_index) }}"
+                        class="btn btn-sm btn-outline-secondary">Edit Lot</a>
+                    <a href="{{ url_for('add_sale', investment_name=investment.investment_name, transaction_index=tx_index) }}"
+                        class="btn btn-sm btn-outline-primary">+ Sale</a>
+                    <form action="{{ url_for('delete_transaction', investment_name=investment.investment_name, transaction_index=tx_index) }}"
+                        method="POST" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Delete this lot and all its sales?');">Delete Lot</button>
+                    </form>
+                </div>
+                {% endif %}
             </td>
         </tr>
+            {% endfor %}
         {% endfor %}
     </tbody>
     <tfoot>

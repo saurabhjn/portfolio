@@ -135,6 +135,40 @@ class TransactionForm(FlaskForm):
         return not has_error
 
 
+class SaleForm(FlaskForm):
+    """Form for adding or editing a single sale against a buy lot."""
+
+    sell_date = DateField("Sell/Payout Date", format="%Y-%m-%d", validators=[DataRequired()])
+    sell_quantity = DecimalField(
+        "Sell Quantity (Optional for Payouts)", validators=[Optional()], places=4
+    )
+    sell_rate = DecimalField(
+        "Sell Rate / Payout Amount", validators=[DataRequired()], places=4
+    )
+    submit = SubmitField("Save Sale")
+
+    def __init__(self, *args, **kwargs):
+        # Caller may pass max_quantity so we can bound the sell_quantity to what's
+        # still available on the parent lot.
+        self.max_quantity = kwargs.pop("max_quantity", None)
+        super().__init__(*args, **kwargs)
+
+    def validate(self, extra_validators=None):
+        if not super().validate(extra_validators):
+            return False
+        if (
+            self.max_quantity is not None
+            and self.sell_quantity.data is not None
+            and self.sell_quantity.data > 0
+            and self.sell_quantity.data > self.max_quantity
+        ):
+            self.sell_quantity.errors.append(
+                f"Sell quantity cannot exceed available quantity ({self.max_quantity:f})."
+            )
+            return False
+        return True
+
+
 class ExpenseForm(FlaskForm):
     """Form for adding or editing an expense."""
 

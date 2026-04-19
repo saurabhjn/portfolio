@@ -31,25 +31,53 @@
 </script>
 {% endif %}
 
-{% if form.__class__.__name__ == 'TransactionForm' %}
+{% if form.__class__.__name__ in ('TransactionForm', 'SaleForm') %}
+{% if parent_buy_quantity is defined and parent_buy_quantity is not none %}
+<script>window.__parentBuyQuantity = "{{ parent_buy_quantity }}";</script>
+{% endif %}
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const buyQty = document.getElementById('buy_quantity');
         const sellQty = document.getElementById('sell_quantity');
-        if (!buyQty || !sellQty) return;
+        if (!sellQty) return;
+
+        const buyQty = document.getElementById('buy_quantity');
+        const getSourceValue = function () {
+            if (buyQty && buyQty.value !== '') return buyQty.value;
+            if (window.__parentBuyQuantity) return window.__parentBuyQuantity;
+            return '';
+        };
 
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn btn-sm btn-outline-secondary mt-1';
         btn.textContent = 'Same as buy quantity';
         btn.addEventListener('click', function () {
-            if (buyQty.value !== '') {
-                sellQty.value = buyQty.value;
+            const src = getSourceValue();
+            if (src !== '') {
+                sellQty.value = src;
                 sellQty.dispatchEvent(new Event('input', { bubbles: true }));
             }
         });
 
         sellQty.insertAdjacentElement('afterend', btn);
+    });
+</script>
+{% endif %}
+
+{% if disable_sell_fields %}
+<div class="alert alert-info mt-3">
+    This lot has multiple sales. Edit sell details on each sale individually from the transactions page.
+</div>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        ['sell_date', 'sell_quantity', 'sell_rate'].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.disabled = true;
+                const wrap = el.closest('.mb-3');
+                if (wrap) wrap.style.display = 'none';
+            }
+        });
     });
 </script>
 {% endif %}

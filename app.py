@@ -12,6 +12,7 @@ from model import (
     Investment,
     Currency,
     Transaction,
+    Sale,
     Expense,
     ExpenseCategory,
     RecurrencePeriod,
@@ -33,7 +34,7 @@ from api_calls import (
     get_exchange_rates,
     rate_cache,
 )
-from form import InvestmentForm, TransactionForm, ExpenseForm
+from form import InvestmentForm, TransactionForm, SaleForm, ExpenseForm
 from xirr import (
     calculate_investment_xirr,
     calculate_historical_investment_xirr,
@@ -694,12 +695,10 @@ def edit_investment(investment_index):
 
 
 def _transaction_sort_key(transaction: Transaction) -> datetime.date:
-    """Earliest date on a transaction (buy, sell, or gain); dateless sorts last."""
-    dates = [
-        d
-        for d in [transaction.buy_date, transaction.sell_date, transaction.gain_date]
-        if d
-    ]
+    """Earliest date on a transaction (buy, any sell, or gain); dateless sorts last."""
+    dates = [transaction.buy_date, transaction.gain_date]
+    dates.extend(s.sell_date for s in transaction.sales)
+    dates = [d for d in dates if d]
     return min(dates) if dates else datetime.date.max
 
 
@@ -771,26 +770,31 @@ def add_transaction(investment_name=None):
     if form.validate_on_submit():
         investment_name_from_form = form.investment_name.data
 
-        # Calculate gain_from_sale if it's a sell transaction
-        gain_from_sale = None
-        if form.sell_quantity.data and form.sell_rate.data and form.buy_rate.data:
-            gain_from_sale = (
-                form.sell_rate.data - form.buy_rate.data
-            ) * form.sell_quantity.data
+        sales = []
+        if form.sell_date.data is not None and form.sell_rate.data is not None:
+            gain_from_sale = None
+            if form.sell_quantity.data and form.sell_rate.data and form.buy_rate.data:
+                gain_from_sale = (
+                    form.sell_rate.data - form.buy_rate.data
+                ) * form.sell_quantity.data
+            sales.append(
+                Sale(
+                    sell_date=form.sell_date.data,
+                    sell_quantity=form.sell_quantity.data,
+                    sell_rate=form.sell_rate.data,
+                    gain_from_sale=gain_from_sale,
+                )
+            )
 
         new_transaction = Transaction(
             buy_date=form.buy_date.data,
             buy_quantity=form.buy_quantity.data,
             buy_rate=form.buy_rate.data,
             description=form.description.data,
-            sell_date=form.sell_date.data,
-            sell_quantity=form.sell_quantity.data,
-            sell_rate=form.sell_rate.data,
-            gain_from_sale=gain_from_sale,
+            sales=sales,
             gain_date=form.gain_date.data,
             gain_amount=form.gain_amount.data,
         )
-        # Add transaction to the correct list in the dictionary
         transactions_data.setdefault(investment_name_from_form, []).append(
             new_transaction
         )
@@ -825,31 +829,56 @@ def edit_transaction(investment_name, transaction_index):
         (inv.investment_name, inv.investment_name) for inv in investments
     ]
 
+    # The combined form edits the buy/gain portion plus up to one sale.
+    # If the lot has >1 sales, the sell fields on this form are disabled; the
+    # user manages individual sales via the per-sale edit/delete actions.
+    multiple_sales = len(transaction_to_edit.sales) > 1
+
     if form.validate_on_submit():
         new_investment_name = form.investment_name.data
 
-        # Calculate gain_from_sale if it's a sell transaction
-        gain_from_sale = None
-        if form.sell_quantity.data and form.sell_rate.data and form.buy_rate.data:
-            gain_from_sale = (
-                form.sell_rate.data - form.buy_rate.data
-            ) * form.sell_quantity.data
-
-        # Update the transaction object's data
         transaction_to_edit.buy_date = form.buy_date.data
         transaction_to_edit.buy_quantity = form.buy_quantity.data
         transaction_to_edit.buy_rate = form.buy_rate.data
         transaction_to_edit.description = form.description.data
-        transaction_to_edit.sell_date = form.sell_date.data
-        transaction_to_edit.sell_quantity = form.sell_quantity.data
-        transaction_to_edit.sell_rate = form.sell_rate.data
-        transaction_to_edit.gain_from_sale = gain_from_sale
         transaction_to_edit.gain_date = form.gain_date.data
         transaction_to_edit.gain_amount = form.gain_amount.data
 
-        # If the investment was changed, move the transaction to the new list.
-        # Use .remove(obj) because transaction_index refers to the sorted list,
-        # whose positions differ from the underlying stored list.
+        if not multiple_sales:
+            # Reconcile the single-sale slot with the form fields.
+            if form.sell_date.data is not None and form.sell_rate.data is not None:
+                gain_from_sale = None
+                if (
+                    form.sell_quantity.data
+                    and form.sell_rate.data
+                    and form.buy_rate.data
+                ):
+                    gain_from_sale = (
+                        form.sell_rate.data - form.buy_rate.data
+                    ) * form.sell_quantity.data
+                sale = Sale(
+                    sell_date=form.sell_date.data,
+                    sell_quantity=form.sell_quantity.data,
+                    sell_rate=form.sell_rate.data,
+                    gain_from_sale=gain_from_sale,
+                )
+                transaction_to_edit.sales = [sale]
+            else:
+                transaction_to_edit.sales = []
+        else:
+            # Recompute gain_from_sale for each existing sale in case buy_rate changed.
+            for sale in transaction_to_edit.sales:
+                if (
+                    sale.sell_quantity is not None
+                    and sale.sell_quantity > 0
+                    and sale.sell_rate is not None
+                    and transaction_to_edit.buy_rate is not None
+                ):
+                    sale.gain_from_sale = (
+                        sale.sell_rate - transaction_to_edit.buy_rate
+                    ) * sale.sell_quantity
+
+        # If the investment was changed, move the transaction to the new list
         if new_investment_name != investment_name:
             transactions_data[investment_name].remove(transaction_to_edit)
             transactions_data.setdefault(new_investment_name, []).append(
@@ -863,11 +892,27 @@ def edit_transaction(investment_name, transaction_index):
         )
 
     # Pre-populate form for GET request
-    form.process(data=transaction_to_edit.__dict__)
-    form.investment_name.data = investment_name  # Set dropdown to original investment
+    prefill = {
+        "buy_date": transaction_to_edit.buy_date,
+        "buy_quantity": transaction_to_edit.buy_quantity,
+        "buy_rate": transaction_to_edit.buy_rate,
+        "description": transaction_to_edit.description,
+        "gain_date": transaction_to_edit.gain_date,
+        "gain_amount": transaction_to_edit.gain_amount,
+    }
+    if not multiple_sales and transaction_to_edit.sales:
+        s = transaction_to_edit.sales[0]
+        prefill["sell_date"] = s.sell_date
+        prefill["sell_quantity"] = s.sell_quantity
+        prefill["sell_rate"] = s.sell_rate
+    form.process(data=prefill)
+    form.investment_name.data = investment_name
 
     return render_template(
-        "form_page.html", form=form, title=f"Edit Transaction for {investment_name}"
+        "form_page.html",
+        form=form,
+        title=f"Edit Transaction for {investment_name}",
+        disable_sell_fields=multiple_sales,
     )
 
 
@@ -886,6 +931,142 @@ def delete_transaction(investment_name, transaction_index):
     transactions_data[investment_name].remove(sorted_transactions[transaction_index])
     save_encrypted_data()
     flash(f"Transaction for {investment_name} deleted!", "info")
+    return redirect(url_for("view_transactions", investment_name=investment_name))
+
+
+def _sale_remaining_quantity(tx: Transaction, exclude_sale: Sale = None) -> Decimal:
+    """Remaining quantity on a buy lot after accounting for existing sales."""
+    if tx.buy_quantity is None or tx.buy_quantity <= 0:
+        return Decimal(0)
+    sold = sum(
+        (s.sell_quantity for s in tx.sales if s is not exclude_sale and s.sell_quantity is not None),
+        Decimal(0),
+    )
+    return tx.buy_quantity - sold
+
+
+@app.route(
+    "/investments/<string:investment_name>/transactions/<int:transaction_index>/sales/add",
+    methods=["GET", "POST"],
+)
+@require_unlock
+def add_sale(investment_name, transaction_index):
+    """Add a new sale against the specified buy lot."""
+    sorted_transactions = _sorted_transactions_for(investment_name)
+    if not 0 <= transaction_index < len(sorted_transactions):
+        flash("Transaction not found.", "danger")
+        return redirect(url_for("view_transactions", investment_name=investment_name))
+
+    tx = sorted_transactions[transaction_index]
+    max_qty = _sale_remaining_quantity(tx)
+    form = SaleForm(max_quantity=max_qty if max_qty > 0 else None)
+
+    if form.validate_on_submit():
+        gain_from_sale = None
+        if (
+            form.sell_quantity.data
+            and form.sell_rate.data
+            and tx.buy_rate is not None
+        ):
+            gain_from_sale = (
+                form.sell_rate.data - tx.buy_rate
+            ) * form.sell_quantity.data
+        tx.sales.append(
+            Sale(
+                sell_date=form.sell_date.data,
+                sell_quantity=form.sell_quantity.data,
+                sell_rate=form.sell_rate.data,
+                gain_from_sale=gain_from_sale,
+            )
+        )
+        save_encrypted_data()
+        flash("Sale added.", "success")
+        return redirect(url_for("view_transactions", investment_name=investment_name))
+
+    title = f"Add Sale to lot {tx.buy_date.isoformat() if tx.buy_date else ''}"
+    return render_template(
+        "form_page.html",
+        form=form,
+        title=title,
+        parent_buy_quantity=tx.buy_quantity,
+    )
+
+
+@app.route(
+    "/investments/<string:investment_name>/transactions/<int:transaction_index>/sales/<int:sale_index>/edit",
+    methods=["GET", "POST"],
+)
+@require_unlock
+def edit_sale(investment_name, transaction_index, sale_index):
+    """Edit a specific sale on the specified buy lot."""
+    sorted_transactions = _sorted_transactions_for(investment_name)
+    if not 0 <= transaction_index < len(sorted_transactions):
+        flash("Transaction not found.", "danger")
+        return redirect(url_for("view_transactions", investment_name=investment_name))
+
+    tx = sorted_transactions[transaction_index]
+    if not 0 <= sale_index < len(tx.sales):
+        flash("Sale not found.", "danger")
+        return redirect(url_for("view_transactions", investment_name=investment_name))
+
+    sale = tx.sales[sale_index]
+    max_qty = _sale_remaining_quantity(tx, exclude_sale=sale)
+    form = SaleForm(max_quantity=max_qty if max_qty > 0 else None)
+
+    if form.validate_on_submit():
+        sale.sell_date = form.sell_date.data
+        sale.sell_quantity = form.sell_quantity.data
+        sale.sell_rate = form.sell_rate.data
+        if (
+            form.sell_quantity.data
+            and form.sell_rate.data
+            and tx.buy_rate is not None
+        ):
+            sale.gain_from_sale = (
+                form.sell_rate.data - tx.buy_rate
+            ) * form.sell_quantity.data
+        else:
+            sale.gain_from_sale = None
+        save_encrypted_data()
+        flash("Sale updated.", "success")
+        return redirect(url_for("view_transactions", investment_name=investment_name))
+
+    form.process(
+        data={
+            "sell_date": sale.sell_date,
+            "sell_quantity": sale.sell_quantity,
+            "sell_rate": sale.sell_rate,
+        }
+    )
+    title = f"Edit Sale on lot {tx.buy_date.isoformat() if tx.buy_date else ''}"
+    return render_template(
+        "form_page.html",
+        form=form,
+        title=title,
+        parent_buy_quantity=tx.buy_quantity,
+    )
+
+
+@app.route(
+    "/investments/<string:investment_name>/transactions/<int:transaction_index>/sales/<int:sale_index>/delete",
+    methods=["POST"],
+)
+@require_unlock
+def delete_sale(investment_name, transaction_index, sale_index):
+    """Delete a specific sale from the specified buy lot."""
+    sorted_transactions = _sorted_transactions_for(investment_name)
+    if not 0 <= transaction_index < len(sorted_transactions):
+        flash("Transaction not found.", "danger")
+        return redirect(url_for("view_transactions", investment_name=investment_name))
+
+    tx = sorted_transactions[transaction_index]
+    if not 0 <= sale_index < len(tx.sales):
+        flash("Sale not found.", "danger")
+        return redirect(url_for("view_transactions", investment_name=investment_name))
+
+    tx.sales.pop(sale_index)
+    save_encrypted_data()
+    flash("Sale deleted.", "info")
     return redirect(url_for("view_transactions", investment_name=investment_name))
 
 

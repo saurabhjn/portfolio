@@ -119,13 +119,13 @@ def calculate_portfolio_value_on_date(
                 if transaction.buy_quantity and transaction.buy_rate:
                     holdings += transaction.buy_quantity
                     cost_basis += transaction.buy_quantity * transaction.buy_rate
-            
-            if transaction.sell_date and transaction.sell_date <= target_date:
-                if transaction.sell_quantity:
-                    holdings -= transaction.sell_quantity
+
+            for sale in transaction.sales:
+                if sale.sell_date and sale.sell_date <= target_date and sale.sell_quantity:
+                    holdings -= sale.sell_quantity
                     if transaction.buy_rate:
-                        cost_basis -= transaction.sell_quantity * transaction.buy_rate
-            
+                        cost_basis -= sale.sell_quantity * transaction.buy_rate
+
             if transaction.gain_date and transaction.gain_date <= target_date:
                 if transaction.gain_amount:
                     total_gains += transaction.gain_amount
@@ -178,8 +178,9 @@ def calculate_no_goog_sale_value(
     for tx in goog_transactions:
         if tx.buy_date and tx.buy_date <= target_date and tx.buy_quantity:
             current_holdings += tx.buy_quantity
-        if tx.sell_date and tx.sell_date <= target_date and tx.sell_quantity:
-            current_holdings -= tx.sell_quantity
+        for sale in tx.sales:
+            if sale.sell_date and sale.sell_date <= target_date and sale.sell_quantity:
+                current_holdings -= sale.sell_quantity
     
     # Calculate hypothetical holdings if never sold
     hypothetical_holdings = Decimal(0)
@@ -264,8 +265,9 @@ def generate_portfolio_timeline(
         for t in transactions:
             if t.buy_date:
                 all_dates.append(t.buy_date)
-            if t.sell_date:
-                all_dates.append(t.sell_date)
+            for s in t.sales:
+                if s.sell_date:
+                    all_dates.append(s.sell_date)
             if t.gain_date:
                 all_dates.append(t.gain_date)
     

@@ -26,11 +26,12 @@ def generate_cash_flows_from_transactions(
                 cash_flows.append((tx.buy_date, -(tx.buy_quantity * tx.buy_rate)))
             else:
                 cash_flows.append((tx.buy_date, -tx.buy_rate))
-        if tx.sell_date and tx.sell_rate is not None:
-            if tx.sell_quantity is not None and tx.sell_quantity > 0:
-                cash_flows.append((tx.sell_date, tx.sell_quantity * tx.sell_rate))
-            else:
-                cash_flows.append((tx.sell_date, tx.sell_rate))
+        for sale in tx.sales:
+            if sale.sell_date and sale.sell_rate is not None:
+                if sale.sell_quantity is not None and sale.sell_quantity > 0:
+                    cash_flows.append((sale.sell_date, sale.sell_quantity * sale.sell_rate))
+                else:
+                    cash_flows.append((sale.sell_date, sale.sell_rate))
         if tx.gain_date and tx.gain_amount is not None:
             cash_flows.append((tx.gain_date, tx.gain_amount))
     return cash_flows
@@ -110,7 +111,12 @@ def get_windowed_cash_flow_components(
     window_cash_flows = []
 
     for tx in transactions:
-        tx_date = tx.buy_date or tx.sell_date or tx.gain_date
+        # Preserve the legacy "one-date-per-tx" convention: use the earliest of
+        # buy_date / first-sale / gain_date for all branches on this tx.
+        first_sale_date = next(
+            (s.sell_date for s in tx.sales if s.sell_date is not None), None
+        )
+        tx_date = tx.buy_date or first_sale_date or tx.gain_date
         if not tx_date:
             continue
 
@@ -123,12 +129,15 @@ def get_windowed_cash_flow_components(
             elif tx_date <= end_date:
                 window_cash_flows.append((tx_date, -amt))
 
-        # 2. Handle Sells/Payouts
-        if tx.sell_rate is not None:
-            amt = (tx.sell_quantity * tx.sell_rate) if (tx.sell_quantity is not None and tx.sell_quantity > 0) else tx.sell_rate
+        # 2. Handle Sells/Payouts — each sale's amounts apply, but dated at tx_date
+        # (matches legacy behavior; with one sale per lot these are already equal).
+        for sale in tx.sales:
+            if sale.sell_rate is None:
+                continue
+            amt = (sale.sell_quantity * sale.sell_rate) if (sale.sell_quantity is not None and sale.sell_quantity > 0) else sale.sell_rate
             if tx_date < start_date:
                 val_at_start -= amt
-                if tx.sell_quantity: qty_at_start -= tx.sell_quantity
+                if sale.sell_quantity: qty_at_start -= sale.sell_quantity
             elif tx_date <= end_date:
                 window_cash_flows.append((tx_date, amt))
 

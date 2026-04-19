@@ -48,17 +48,24 @@ class Investment:
 
 
 @dataclass
+class Sale:
+    """A sale against a specific buy lot (Transaction). A lot may have many sales."""
+
+    sell_date: Optional[datetime.date] = None
+    sell_quantity: Optional[Decimal] = None
+    sell_rate: Optional[Decimal] = None
+    gain_from_sale: Optional[Decimal] = None
+
+
+@dataclass
 class Transaction:
-    """A data class representing a financial transaction for an investment."""
+    """A buy lot plus any sales realized from it and any dividend/gain entry."""
 
     buy_date: Optional[datetime.date] = None
     buy_quantity: Optional[Decimal] = None
     buy_rate: Optional[Decimal] = None
     description: Optional[str] = None
-    sell_date: Optional[datetime.date] = None
-    sell_quantity: Optional[Decimal] = None
-    sell_rate: Optional[Decimal] = None
-    gain_from_sale: Optional[Decimal] = None
+    sales: List[Sale] = field(default_factory=list)
     gain_date: Optional[datetime.date] = None
     gain_amount: Optional[Decimal] = None
 
@@ -144,64 +151,83 @@ def save_transactions_to_json(
         json.dump(serializable_data, f, cls=_InvestmentJSONEncoder, indent=4)
 
 
+def _sale_from_dict(item: dict) -> Sale:
+    return Sale(
+        sell_date=(
+            datetime.date.fromisoformat(item["sell_date"])
+            if item.get("sell_date")
+            else None
+        ),
+        sell_quantity=(
+            Decimal(item["sell_quantity"])
+            if item.get("sell_quantity") is not None
+            else None
+        ),
+        sell_rate=(
+            Decimal(item["sell_rate"])
+            if item.get("sell_rate") is not None
+            else None
+        ),
+        gain_from_sale=(
+            Decimal(item["gain_from_sale"])
+            if item.get("gain_from_sale") is not None
+            else None
+        ),
+    )
+
+
 def load_transactions_from_json(filepath: str) -> Dict[str, List[Transaction]]:
     """Loads a dictionary of lists of Transaction objects from a JSON file."""
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        # Reconstruct Transaction objects from the loaded data
         transactions_data = {}
         for inv_name, transactions_list_data in data.items():
-            transactions_data[inv_name] = [
-                Transaction(
-                    buy_date=(
-                        datetime.date.fromisoformat(item["buy_date"])
-                        if item.get("buy_date")
-                        else None
-                    ),
-                    buy_quantity=(
-                        Decimal(item["buy_quantity"])
-                        if item.get("buy_quantity")
-                        else None
-                    ),
-                    buy_rate=(
-                        Decimal(item["buy_rate"]) if item.get("buy_rate") else None
-                    ),
-                    description=item.get("description"),
-                    sell_date=(
-                        datetime.date.fromisoformat(item["sell_date"])
-                        if item.get("sell_date")
-                        else None
-                    ),
-                    sell_quantity=(
-                        Decimal(item["sell_quantity"])
-                        if item.get("sell_quantity") is not None
-                        else None
-                    ),
-                    sell_rate=(
-                        Decimal(item["sell_rate"])
-                        if item.get("sell_rate") is not None
-                        else None
-                    ),
-                    gain_from_sale=(
-                        Decimal(item["gain_from_sale"])
-                        if item.get("gain_from_sale") is not None
-                        else None
-                    ),
-                    gain_date=(
-                        datetime.date.fromisoformat(item["gain_date"])
-                        if item.get("gain_date")
-                        else None
-                    ),
-                    gain_amount=(
-                        Decimal(item["gain_amount"])
-                        if item.get("gain_amount") is not None
-                        else None
-                    ),
+            txs = []
+            for item in transactions_list_data:
+                # Back-compat: old format stored a single sale as top-level
+                # sell_*/gain_from_sale fields; new format has a "sales" list.
+                if "sales" in item:
+                    sales = [_sale_from_dict(s) for s in item["sales"]]
+                elif any(
+                    item.get(k) is not None
+                    for k in ("sell_date", "sell_quantity", "sell_rate", "gain_from_sale")
+                ):
+                    sales = [_sale_from_dict(item)]
+                else:
+                    sales = []
+
+                txs.append(
+                    Transaction(
+                        buy_date=(
+                            datetime.date.fromisoformat(item["buy_date"])
+                            if item.get("buy_date")
+                            else None
+                        ),
+                        buy_quantity=(
+                            Decimal(item["buy_quantity"])
+                            if item.get("buy_quantity")
+                            else None
+                        ),
+                        buy_rate=(
+                            Decimal(item["buy_rate"]) if item.get("buy_rate") else None
+                        ),
+                        description=item.get("description"),
+                        sales=sales,
+                        gain_date=(
+                            datetime.date.fromisoformat(item["gain_date"])
+                            if item.get("gain_date")
+                            else None
+                        ),
+                        gain_amount=(
+                            Decimal(item["gain_amount"])
+                            if item.get("gain_amount") is not None
+                            else None
+                        ),
+                    )
                 )
-                for item in transactions_list_data
-            ]
+            transactions_data[inv_name] = txs
         return transactions_data
     except FileNotFoundError:
         return {}  # Return empty dict if file doesn't exist
@@ -262,28 +288,33 @@ def calculate_transaction_totals(transactions: List[Transaction]) -> Dict[str, D
     net_buy_amount = Decimal(0)
 
     for tx in transactions:
+        sold_qty_from_lot = sum(
+            (s.sell_quantity for s in tx.sales if s.sell_quantity is not None),
+            Decimal(0),
+        )
+
         if tx.buy_rate is not None:
             if tx.buy_quantity is not None and tx.buy_quantity > 0:
                 total_buy_quantity += tx.buy_quantity
                 total_buy_amount += tx.buy_quantity * tx.buy_rate
-                if tx.sell_quantity is not None:
-                    net_buy_amount += (tx.buy_quantity - tx.sell_quantity) * tx.buy_rate
-                else:
-                    net_buy_amount += tx.buy_quantity * tx.buy_rate
+                net_buy_amount += (tx.buy_quantity - sold_qty_from_lot) * tx.buy_rate
             else:
                 # Flat payment/addition to purchase value
                 total_buy_amount += tx.buy_rate
                 net_buy_amount += tx.buy_rate
-        if tx.sell_rate is not None:
-            if tx.sell_quantity is not None and tx.sell_quantity > 0:
-                total_sell_quantity += tx.sell_quantity
-                total_sell_amount += tx.sell_quantity * tx.sell_rate
-            else:
-                # Flat payout/return of capital
-                total_sell_amount += tx.sell_rate
-                net_buy_amount -= tx.sell_rate
-        if tx.gain_from_sale is not None:
-            total_gain_from_sale += tx.gain_from_sale
+
+        for sale in tx.sales:
+            if sale.sell_rate is not None:
+                if sale.sell_quantity is not None and sale.sell_quantity > 0:
+                    total_sell_quantity += sale.sell_quantity
+                    total_sell_amount += sale.sell_quantity * sale.sell_rate
+                else:
+                    # Flat payout/return of capital
+                    total_sell_amount += sale.sell_rate
+                    net_buy_amount -= sale.sell_rate
+            if sale.gain_from_sale is not None:
+                total_gain_from_sale += sale.gain_from_sale
+
         if tx.gain_amount is not None:
             total_gain_amount += tx.gain_amount
 
