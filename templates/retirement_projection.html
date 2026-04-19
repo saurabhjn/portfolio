@@ -60,7 +60,7 @@
         </div>
     </div>
     <div class="col-md-5">
-        <div class="card shadow-sm h-100">
+        <div class="card shadow-sm h-100 mb-3">
             <div class="card-body">
                 <h6 class="card-subtitle mb-2 text-muted">Retirement Lifestyle (today's $)</h6>
                 {% if retirement_lifestyle_expenses %}
@@ -83,6 +83,35 @@
                 {% endif %}
             </div>
         </div>
+        <div class="card shadow-sm h-100 {{ '' if include_education else 'opacity-50' }}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="card-subtitle text-muted mb-0">Education Expenses (today's $)</h6>
+                    <span class="badge {{ 'bg-success' if include_education else 'bg-secondary' }}">
+                        {{ 'Included' if include_education else 'Excluded' }}
+                    </span>
+                </div>
+                {% if education_expenses %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-borderless mb-0 small">
+                        <tbody>
+                            {% for exp in education_expenses %}
+                            <tr>
+                                <td class="ps-0">{{ exp.name }}</td>
+                                <td class="text-end fw-bold">{{ exp.amount | format_currency(exp.currency) }}</td>
+                                <td class="text-muted">
+                                    {% if exp.is_recurring %}/ {{ exp.recurrence_period.value.lower() }}{% else %}{{ exp.date.strftime('%Y-%m') }}{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="small text-muted mb-0">No education expenses defined.</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
     <div class="row mb-4">
         <div class="col-12">
@@ -92,6 +121,7 @@
                 </div>
                 <div class="card-body">
                     <form class="row g-3 align-items-end" method="GET">
+                        <input type="hidden" name="form_submitted" value="1">
                         <div class="col-md-3">
                             <label class="form-label small d-flex align-items-center justify-content-between">
                                 <span>
@@ -126,8 +156,18 @@
                             <label class="form-label small">Model Strategy</label>
                             <div class="form-control form-control-sm bg-light">Liability Matching (NPV)</div>
                         </div>
-                        <div class="col-md-3">
-                            <button type="submit" class="btn btn-primary btn-sm w-100">Update Simulation</button>
+                        <div class="col-md-2">
+                            <label class="form-label small d-block">Education</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="include_education"
+                                    name="include_education" value="on" {% if include_education %}checked{% endif %}>
+                                <label class="form-check-label small" for="include_education">
+                                    Include in NPV
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-1">
+                            <button type="submit" class="btn btn-primary btn-sm w-100">Update</button>
                         </div>
                     </form>
                 </div>

@@ -1175,6 +1175,16 @@ def retirement_projection():
     
     post_growth_param = request.args.get('post_growth')
     post_growth = Decimal(post_growth_param) / 100 if post_growth_param else Decimal("0.065")
+
+    # Whether education expenses should be included in the NPV target.
+    # Default: on (checkbox unchecked only when the user explicitly submits "off").
+    # HTML form convention: checkbox sends its value when checked, nothing when
+    # unchecked. We use a hidden marker so we can distinguish "form submitted
+    # with box unchecked" from "form never submitted".
+    if request.args.get('form_submitted'):
+        include_education = request.args.get('include_education') == 'on'
+    else:
+        include_education = True
     
     swr = Decimal("0.04") # Keep as default for display if needed, but not for target calculation
     
@@ -1221,9 +1231,14 @@ def retirement_projection():
     start_date = datetime.date.today().replace(day=1)
     
     liability_timeline_usd = [Decimal(0)] * projection_months
+    # Filter expenses based on the education toggle
+    expenses_in_scope = [
+        e for e in expenses
+        if include_education or e.category != ExpenseCategory.EDUCATION
+    ]
     for m_idx in range(projection_months):
         m_date = start_date + relativedelta(months=m_idx)
-        for exp in expenses: # Check ALL expenses, not just retirement
+        for exp in expenses_in_scope:
             occurs = False
             if not exp.is_recurring:
                 if exp.date.year == m_date.year and exp.date.month == m_date.month: occurs = True
@@ -1323,6 +1338,8 @@ def retirement_projection():
     gap_usd = max(Decimal(0), required_corpus_usd - total_current_usd)
     gap_inr = gap_usd * usd_to_inr
 
+    education_expenses = [e for e in expenses if e.category == ExpenseCategory.EDUCATION]
+
     return render_template(
         "retirement_projection.html",
         yearly_data=yearly_data,
@@ -1334,6 +1351,8 @@ def retirement_projection():
         medical_corpus_usd=medical_corpus_usd,
         lifestyle_expense_usd=retirement_yearly_outflow_usd,
         retirement_lifestyle_expenses=retirement_lifestyle_expenses,
+        education_expenses=education_expenses,
+        include_education=include_education,
         swr=swr,
         pre_growth=pre_growth,
         post_growth=post_growth,
