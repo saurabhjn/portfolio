@@ -693,6 +693,22 @@ def edit_investment(investment_index):
     )
 
 
+def _transaction_sort_key(transaction: Transaction) -> datetime.date:
+    """Earliest date on a transaction (buy, sell, or gain); dateless sorts last."""
+    dates = [
+        d
+        for d in [transaction.buy_date, transaction.sell_date, transaction.gain_date]
+        if d
+    ]
+    return min(dates) if dates else datetime.date.max
+
+
+def _sorted_transactions_for(investment_name: str) -> List[Transaction]:
+    return sorted(
+        transactions_data.get(investment_name, []), key=_transaction_sort_key
+    )
+
+
 @app.route("/investments/<string:investment_name>/transactions")
 @require_unlock
 def view_transactions(investment_name):
@@ -705,26 +721,7 @@ def view_transactions(investment_name):
         flash(f"Investment '{investment_name}' not found.", "danger")
         return redirect(url_for("index"))
 
-    transactions_for_investment = transactions_data.get(investment_name, [])
-
-    # Sort transactions chronologically.
-    # The sort key is the earliest date found on the transaction (buy, sell, or gain).
-    # Transactions without any date are sorted to the end.
-    def get_sort_key(transaction: Transaction) -> datetime.date:
-        """Get the earliest date from a transaction to use as a sort key."""
-        dates = [
-            d
-            for d in [
-                transaction.buy_date,
-                transaction.sell_date,
-                transaction.gain_date,
-            ]
-            if d
-        ]
-        # A valid transaction should have a date, but this handles edge cases.
-        return min(dates) if dates else datetime.date.max
-
-    sorted_transactions = sorted(transactions_for_investment, key=get_sort_key)
+    sorted_transactions = _sorted_transactions_for(investment_name)
 
     # Use the helper to get all calculated metrics
     metrics = _calculate_investment_metrics(investment, sorted_transactions)
@@ -817,12 +814,12 @@ def add_transaction(investment_name=None):
 @require_unlock
 def edit_transaction(investment_name, transaction_index):
     """Handles editing an existing transaction."""
-    transactions_for_investment = transactions_data.get(investment_name, [])
-    if not 0 <= transaction_index < len(transactions_for_investment):
+    sorted_transactions = _sorted_transactions_for(investment_name)
+    if not 0 <= transaction_index < len(sorted_transactions):
         flash("Transaction not found.", "danger")
         return redirect(url_for("view_transactions", investment_name=investment_name))
 
-    transaction_to_edit = transactions_for_investment[transaction_index]
+    transaction_to_edit = sorted_transactions[transaction_index]
     form = TransactionForm()
     form.investment_name.choices = [
         (inv.investment_name, inv.investment_name) for inv in investments
@@ -850,11 +847,11 @@ def edit_transaction(investment_name, transaction_index):
         transaction_to_edit.gain_date = form.gain_date.data
         transaction_to_edit.gain_amount = form.gain_amount.data
 
-        # If the investment was changed, move the transaction to the new list
+        # If the investment was changed, move the transaction to the new list.
+        # Use .remove(obj) because transaction_index refers to the sorted list,
+        # whose positions differ from the underlying stored list.
         if new_investment_name != investment_name:
-            # Remove from the old investment's transaction list
-            transactions_data[investment_name].pop(transaction_index)
-            # Add to the new investment's transaction list
+            transactions_data[investment_name].remove(transaction_to_edit)
             transactions_data.setdefault(new_investment_name, []).append(
                 transaction_to_edit
             )
@@ -881,12 +878,12 @@ def edit_transaction(investment_name, transaction_index):
 @require_unlock
 def delete_transaction(investment_name, transaction_index):
     """Handles deleting a transaction."""
-    transactions_for_investment = transactions_data.get(investment_name, [])
-    if not 0 <= transaction_index < len(transactions_for_investment):
+    sorted_transactions = _sorted_transactions_for(investment_name)
+    if not 0 <= transaction_index < len(sorted_transactions):
         flash("Transaction not found.", "danger")
         return redirect(url_for("view_transactions", investment_name=investment_name))
 
-    transactions_for_investment.pop(transaction_index)
+    transactions_data[investment_name].remove(sorted_transactions[transaction_index])
     save_encrypted_data()
     flash(f"Transaction for {investment_name} deleted!", "info")
     return redirect(url_for("view_transactions", investment_name=investment_name))
