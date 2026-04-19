@@ -111,42 +111,33 @@ def get_windowed_cash_flow_components(
     window_cash_flows = []
 
     for tx in transactions:
-        # Preserve the legacy "one-date-per-tx" convention: use the earliest of
-        # buy_date / first-sale / gain_date for all branches on this tx.
-        first_sale_date = next(
-            (s.sell_date for s in tx.sales if s.sell_date is not None), None
-        )
-        tx_date = tx.buy_date or first_sale_date or tx.gain_date
-        if not tx_date:
-            continue
-
-        # 1. Handle Buys
-        if tx.buy_rate is not None:
+        # Each event is dated on its own date — buy on buy_date, each sale on
+        # its own sell_date, gain on gain_date. Previously all three legs of a
+        # transaction shared a single tx_date (buy_date if present), which
+        # mis-dated sales and gains whenever they differed from the buy.
+        if tx.buy_rate is not None and tx.buy_date is not None:
             amt = (tx.buy_quantity * tx.buy_rate) if (tx.buy_quantity is not None and tx.buy_quantity > 0) else tx.buy_rate
-            if tx_date < start_date:
+            if tx.buy_date < start_date:
                 val_at_start += amt
                 if tx.buy_quantity: qty_at_start += tx.buy_quantity
-            elif tx_date <= end_date:
-                window_cash_flows.append((tx_date, -amt))
+            elif tx.buy_date <= end_date:
+                window_cash_flows.append((tx.buy_date, -amt))
 
-        # 2. Handle Sells/Payouts — each sale's amounts apply, but dated at tx_date
-        # (matches legacy behavior; with one sale per lot these are already equal).
         for sale in tx.sales:
-            if sale.sell_rate is None:
+            if sale.sell_rate is None or sale.sell_date is None:
                 continue
             amt = (sale.sell_quantity * sale.sell_rate) if (sale.sell_quantity is not None and sale.sell_quantity > 0) else sale.sell_rate
-            if tx_date < start_date:
+            if sale.sell_date < start_date:
                 val_at_start -= amt
                 if sale.sell_quantity: qty_at_start -= sale.sell_quantity
-            elif tx_date <= end_date:
-                window_cash_flows.append((tx_date, amt))
+            elif sale.sell_date <= end_date:
+                window_cash_flows.append((sale.sell_date, amt))
 
-        # 3. Handle Gains (Income/Dividends)
-        if tx.gain_amount is not None:
-            if tx_date < start_date:
+        if tx.gain_amount is not None and tx.gain_date is not None:
+            if tx.gain_date < start_date:
                 val_at_start += tx.gain_amount
-            elif tx_date <= end_date:
-                window_cash_flows.append((tx_date, tx.gain_amount))
+            elif tx.gain_date <= end_date:
+                window_cash_flows.append((tx.gain_date, tx.gain_amount))
 
     if start_rate is not None:
         calculated_start_value = qty_at_start * start_rate
