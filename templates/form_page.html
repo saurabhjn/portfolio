@@ -30,4 +30,27 @@
     });
 </script>
 {% endif %}
+
+{% if form.__class__.__name__ == 'TransactionForm' %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const buyQty = document.getElementById('buy_quantity');
+        const sellQty = document.getElementById('sell_quantity');
+        if (!buyQty || !sellQty) return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-outline-secondary mt-1';
+        btn.textContent = 'Same as buy quantity';
+        btn.addEventListener('click', function () {
+            if (buyQty.value !== '') {
+                sellQty.value = buyQty.value;
+                sellQty.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+
+        sellQty.insertAdjacentElement('afterend', btn);
+    });
+</script>
+{% endif %}
 {% endblock %}
