@@ -63,22 +63,4 @@
     });
 </script>
 {% endif %}
-
-{% if disable_sell_fields %}
-<div class="alert alert-info mt-3">
-    This lot has multiple sales. Edit sell details on each sale individually from the transactions page.
-</div>
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        ['sell_date', 'sell_quantity', 'sell_rate'].forEach(function (id) {
-            const el = document.getElementById(id);
-            if (el) {
-                el.disabled = true;
-                const wrap = el.closest('.mb-3');
-                if (wrap) wrap.style.display = 'none';
-            }
-        });
-    });
-</script>
-{% endif %}
 {% endblock %}

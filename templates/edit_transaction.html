@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% from 'bootstrap5/form.html' import render_field %}
+
+{% block content %}
+{% set has_qty_buy = tx.buy_quantity is not none and tx.buy_quantity > 0 %}
+{% set n_sales = tx.sales | length %}
+
+<div class="row">
+    <div class="col-md-10 col-lg-8 mx-auto">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0">Edit Transaction</h1>
+            <a href="{{ url_for('view_transactions', investment_name=investment_name) }}"
+                class="btn btn-sm btn-outline-secondary">Back</a>
+        </div>
+
+        <form method="POST" action="" novalidate>
+            {{ form.hidden_tag() }}
+
+            <fieldset class="border rounded p-3 mb-3">
+                <legend class="float-none w-auto px-2 fs-5">
+                    {% if has_qty_buy %}Buy{% else %}Payment{% endif %}
+                </legend>
+                {{ render_field(form.investment_name) }}
+                {{ render_field(form.buy_date) }}
+                {{ render_field(form.buy_quantity) }}
+                {{ render_field(form.buy_rate) }}
+                {{ render_field(form.description) }}
+            </fieldset>
+
+            <fieldset class="border rounded p-3 mb-3">
+                <legend class="float-none w-auto px-2 fs-5">Gain / Dividend</legend>
+                {{ render_field(form.gain_date) }}
+                {{ render_field(form.gain_amount) }}
+            </fieldset>
+
+            {{ render_field(form.submit) }}
+        </form>
+
+        <hr class="my-4">
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="mb-0 fs-4">
+                {% if n_sales == 0 %}No sales yet
+                {% elif n_sales == 1 %}Sale
+                {% else %}Sales ({{ n_sales }})
+                {% endif %}
+            </h2>
+            <a href="{{ url_for('add_sale', investment_name=investment_name, transaction_index=transaction_index) }}"
+                class="btn btn-sm btn-primary">+ Add Sale</a>
+        </div>
+
+        {% if n_sales > 0 %}
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Date</th>
+                    {% if investment.ticker %}<th class="text-end">Qty</th>{% endif %}
+                    <th class="text-end">Rate / Amount</th>
+                    <th class="text-end">Realized Gain</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sale in tx.sales %}
+                {% set is_payout = (sale.sell_quantity is none) or (sale.sell_quantity == 0) %}
+                <tr>
+                    <td>{{ 'Payout' if is_payout else 'Sale' }}</td>
+                    <td>{{ sale.sell_date.strftime('%Y-%m-%d') if sale.sell_date else '-' }}</td>
+                    {% if investment.ticker %}
+                    <td class="text-end">
+                        {{ sale.sell_quantity | format_quantity if not is_payout else '-' }}
+                    </td>
+                    {% endif %}
+                    <td class="text-end">
+                        {% if sale.sell_rate is not none %}
+                        {{ sale.sell_rate | format_currency(investment.currency) }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if sale.gain_from_sale is not none %}
+                        {{ sale.gain_from_sale | format_currency(investment.currency) }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td class="text-nowrap">
+                        <a href="{{ url_for('edit_sale', investment_name=investment_name, transaction_index=transaction_index, sale_index=loop.index0) }}"
+                            class="btn btn-sm btn-outline-secondary">Edit</a>
+                        <form action="{{ url_for('delete_sale', investment_name=investment_name, transaction_index=transaction_index, sale_index=loop.index0) }}"
+                            method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                onclick="return confirm('Delete this sale?');">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
