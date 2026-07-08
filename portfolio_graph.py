@@ -183,61 +183,64 @@ def calculate_no_goog_sale_value(
     transactions_data: Dict[str, List[Transaction]],
     target_date: datetime.date,
     current_rates: Dict[str, Decimal],
-    is_today: bool = False
+    is_today: bool = False,
+    actual_usd: Optional[Decimal] = None,
+    actual_inr: Optional[Decimal] = None,
 ) -> Tuple[Decimal, Decimal]:
-    """Calculate portfolio value as if GOOG was never sold."""
+    """Portfolio value as if the sold-down holding had never been sold.
+
+    Returns the *full* portfolio value (not a delta) split into (usd, inr):
+    the actual portfolio plus the value of every share of that holding sold on
+    or before ``target_date``, valued at that date's price. When nothing was
+    ever sold — or there is no such position, or no price is available — this
+    equals the actual portfolio value, so the chart line tracks 'Total
+    Portfolio Value' instead of collapsing to zero and then jumping on the
+    first sale.
+
+    ``actual_usd``/``actual_inr`` may be passed in to reuse an already-computed
+    portfolio value for this date and skip a redundant recomputation.
+    """
+    if actual_usd is None or actual_inr is None:
+        actual_usd, actual_inr, _, _ = calculate_portfolio_value_on_date(
+            investments, transactions_data, target_date, current_rates, is_today
+        )
+
     goog_investment = None
     for inv in investments:
         if 'GOOG' in inv.investment_name.upper():
             goog_investment = inv
             break
-    
+
     if not goog_investment:
-        return Decimal(0), Decimal(0)
-    
+        return actual_usd, actual_inr
+
     goog_transactions = transactions_data.get(goog_investment.investment_name, [])
-    
-    # Calculate current GOOG holdings (net of sales)
-    current_holdings = Decimal(0)
+
+    # Shares sold on or before this date (in the same split basis as holdings).
+    sold_shares = Decimal(0)
     for tx in goog_transactions:
-        if tx.buy_date and tx.buy_date <= target_date and tx.buy_quantity:
-            current_holdings += tx.buy_quantity
         for sale in tx.sales:
             if sale.sell_date and sale.sell_date <= target_date and sale.sell_quantity:
-                current_holdings -= sale.sell_quantity
-    
-    # Calculate hypothetical holdings if never sold
-    hypothetical_holdings = Decimal(0)
-    for tx in goog_transactions:
-        if tx.buy_date and tx.buy_date <= target_date and tx.buy_quantity:
-            hypothetical_holdings += tx.buy_quantity
-    
-    if hypothetical_holdings == current_holdings:
-        return Decimal(0), Decimal(0)
-    
+                sold_shares += sale.sell_quantity
+
+    if sold_shares <= 0:
+        return actual_usd, actual_inr
+
     if is_today:
         goog_rate = current_rates.get(goog_investment.investment_name)
     elif goog_investment.ticker:
         goog_rate = get_historical_stock_price(goog_investment.ticker, target_date)
     else:
         goog_rate = None
-    
+
     if not goog_rate:
-        return Decimal(0), Decimal(0)
-    
-    current_goog_value = current_holdings * goog_rate
-    hypothetical_goog_value = hypothetical_holdings * goog_rate
-    
-    # Get actual portfolio value
-    actual_usd, actual_inr, _, _ = calculate_portfolio_value_on_date(
-        investments, transactions_data, target_date, current_rates, is_today
-    )
-    
-    # No GOOG sale = actual portfolio - current GOOG + hypothetical GOOG
-    no_sale_usd = actual_usd - current_goog_value + hypothetical_goog_value
-    no_sale_inr = actual_inr
-    
-    return no_sale_usd, no_sale_inr
+        return actual_usd, actual_inr
+
+    # Add back the sold shares at this date's price, in the holding's own currency.
+    addback = sold_shares * goog_rate
+    if goog_investment.currency == Currency.USD:
+        return actual_usd + addback, actual_inr
+    return actual_usd, actual_inr + addback
 
 
 def detect_new_investments(
@@ -323,7 +326,8 @@ def generate_portfolio_timeline(
         )
         
         no_goog_usd, no_goog_inr = calculate_no_goog_sale_value(
-            investments, transactions_data, date, current_rates, is_today
+            investments, transactions_data, date, current_rates, is_today,
+            actual_usd=total_usd, actual_inr=total_inr
         )
         
         new_usd, new_inr, is_new_investment, event_desc = detect_new_investments(
