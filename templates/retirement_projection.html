@@ -120,11 +120,13 @@
                                 <span>
                                     Pre-Retirement Real Growth (%)
                                     <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip"
-                                        title="Expected annual return net of inflation. Historical US Equities real return is approx 7%. Use your recent XIRR as a guide (e.g. Portfolio XIRR - Inflation Rate)."></i>
+                                        title="Return used while you are still investing, after inflation. Default = your Portfolio XIRR minus 2.5% US inflation. Historical US equity real return is about 7%."></i>
                                 </span>
                                 {% if us_xirr %}
-                                <span class="badge bg-light text-dark border ms-2">Portfolio XIRR: {{ us_xirr | round(1)
-                                    }}%</span>
+                                <span class="text-end ms-2">
+                                    <span class="badge bg-light text-dark border">Portfolio XIRR: {{ us_xirr | round(1) }}%</span>
+                                    <span class="d-block text-muted" style="font-size: 0.7rem;">less {{ us_inflation_pct | round(1) }}% US inflation</span>
+                                </span>
                                 {% endif %}
                             </label>
                             <div class="input-group input-group-sm">
@@ -135,9 +137,33 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label small d-flex align-items-center">
+                                Early Retirement Real Growth (%)
+                                <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip"
+                                    title="Aggressive real growth for the first few years of retirement, on the plan that you go back to work if markets fall badly. Applies only for the Early Retirement Years."></i>
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" step="0.1" name="early_growth" class="form-control"
+                                    value="{{ early_growth_pct | round(1) }}">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small d-flex align-items-center">
+                                Aggressive Until (Year)
+                                <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip"
+                                    title="The aggressive Early Retirement rate applies until this year, then switches to the conservative Post-Retirement rate."></i>
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" step="1" min="2026" max="2100" name="early_until_year" class="form-control"
+                                    value="{{ early_until_year }}">
+                                <span class="input-group-text">yr</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small d-flex align-items-center">
                                 Post-Retirement Real Growth (%)
                                 <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip"
-                                    title="Expected return net of inflation after you stop active investing. Recommended: 3-5% (assumes a more conservative mix of blue-chips/debt)."></i>
+                                    title="Conservative real growth that applies AFTER the Early Retirement Years — capital preservation for the rest of retirement."></i>
                             </label>
                             <div class="input-group input-group-sm">
                                 <input type="number" step="0.1" name="post_growth" class="form-control"
@@ -146,8 +172,28 @@
                             </div>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label small">Model Strategy</label>
-                            <div class="form-control form-control-sm bg-light">Liability Matching (NPV)</div>
+                            <label class="form-label small d-flex align-items-center">
+                                Medical Additional Real Growth (%)
+                                <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip"
+                                    title="Extra real growth for medical, on top of the general rate the rest of the model uses. Medical runs about 13% a year vs about 6% general, so roughly 7% extra. Applied to medical expenses and the medical corpus."></i>
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" step="0.1" name="medical_growth" class="form-control"
+                                    value="{{ medical_real_growth_pct | round(1) }}">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small d-flex align-items-center">
+                                Plan Until (Year)
+                                <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip"
+                                    title="The year the plan should run to. Projection horizon = this year minus the current year = {{ projection_years }} years."></i>
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" step="1" min="2027" max="2100" name="plan_until_year" class="form-control"
+                                    value="{{ plan_until_year }}">
+                                <span class="input-group-text">yr</span>
+                            </div>
                         </div>
                         <div class="col-md-3">
                             <button type="submit" class="btn btn-primary btn-sm w-100">Update Simulation</button>
@@ -229,6 +275,7 @@
         const labels = data.map(d => d.year);
         const portfolioValues = data.map(d => d.portfolio);
         const requiredValues = data.map(d => d.required_corpus);
+        const noDrawdownValues = data.map(d => d.no_drawdown);
 
         new Chart(ctx, {
             type: 'line',
@@ -250,6 +297,16 @@
                         borderDash: [5, 5],
                         fill: false,
                         tension: 0
+                    },
+                    {
+                        label: 'Corpus if never drawn down',
+                        data: noDrawdownValues,
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220, 53, 69, 0.05)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.1,
+                        spanGaps: false
                     }
                 ]
             },
