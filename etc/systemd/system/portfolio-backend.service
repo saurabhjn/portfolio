@@ -1,0 +1,22 @@
+# Backend gunicorn, started/stopped on demand by portfolio.service (the idle proxy).
+# Keep --workers 1: the app holds decrypted data in per-process globals, so extra
+# workers each serve their own snapshot (a refresh bounces between divergent copies).
+# app.py re-syncs from disk on change, but a single worker keeps this simple.
+[Unit]
+Description=portfolio backend gunicorn (started/stopped by portfolio.service)
+BindsTo=portfolio.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/portfolio
+# Real value is set in the deployed unit on the host — do not commit the secret.
+Environment="SECRET_KEY=CHANGE_ME_set_real_value_on_host"
+ExecStart=/home/ubuntu/portfolio/.venv/bin/gunicorn --bind 127.0.0.1:51115 --workers 1 --timeout 120 --capture-output --log-level warning app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+PrivateTmp=true

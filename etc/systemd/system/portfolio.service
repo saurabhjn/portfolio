@@ -1,0 +1,14 @@
+[Unit]
+Description=portfolio idle-aware proxy (systemd-socket-proxyd)
+Requires=portfolio.socket
+After=portfolio.socket
+Requires=portfolio-backend.service
+After=portfolio-backend.service
+
+[Service]
+Type=notify
+ExecStartPre=/bin/bash -c 'for i in {1..40}; do (echo > /dev/tcp/127.0.0.1/51115) 2>/dev/null && exit 0; sleep 0.25; done; exit 1'
+ExecStart=/lib/systemd/systemd-socket-proxyd --exit-idle-time=10min 127.0.0.1:51115
+
+[Install]
+# WantedBy removed — socket activation only (idle-stop relies on connection-then-drop)

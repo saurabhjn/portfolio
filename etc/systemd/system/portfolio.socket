@@ -1,0 +1,10 @@
+[Unit]
+Description=portfolio public socket (nginx -> systemd-socket-proxyd)
+
+[Socket]
+ListenStream=/run/portfolio.sock
+SocketUser=www-data
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target
