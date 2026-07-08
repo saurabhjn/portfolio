@@ -1544,18 +1544,6 @@ def portfolio_graph():
     except Exception as e:
         flash(f"Error generating graph: {str(e)}", "danger")
         return redirect(url_for("index"))
-        
-        if not snapshots:
-            flash("No portfolio data available for graphing.", "warning")
-            return redirect(url_for("index"))
-        
-        # Prepare data for Chart.js
-        chart_data = prepare_chart_data(snapshots, usd_to_inr_rate)
-        
-        return render_template("portfolio_graph.html", chart_data=chart_data)
-    except Exception as e:
-        flash(f"Error generating portfolio graph: {str(e)}", "danger")
-        return redirect(url_for("index"))
 
 
 if __name__ == "__main__":
