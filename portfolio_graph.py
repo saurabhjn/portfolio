@@ -50,6 +50,24 @@ def get_historical_stock_price(ticker: str, date: datetime.date) -> Optional[Dec
         return None
 
 
+def get_last_known_price(ticker: str, date: datetime.date,
+                         max_lookback_days: int = 400) -> Optional[Decimal]:
+    """Most recent cached price for ``ticker`` on or before ``date``.
+
+    Used to carry a price forward when a live/historical lookup fails (e.g. API
+    throttling). Reads only the existing cache — never hits the network — so a
+    missing point holds the line flat instead of collapsing to cost basis.
+    """
+    from api_calls import rate_cache
+
+    for i in range(max_lookback_days + 1):
+        d = date - datetime.timedelta(days=i)
+        key = f"HIST_{ticker}_{d.isoformat()}"
+        if key in rate_cache:
+            return rate_cache[key][1]
+    return None
+
+
 def get_historical_nav(ticker: str, date: datetime.date) -> Optional[Decimal]:
     """Get historical NAV for Indian mutual fund using scheme code."""
     from api_calls import rate_cache, save_rate_cache, RATE_CACHE_FILE
@@ -141,7 +159,13 @@ def calculate_portfolio_value_on_date(
                     rate = get_historical_stock_price(investment.ticker, target_date)
             else:
                 rate = None
-            
+
+            # If the live/historical lookup came back empty (typically API
+            # throttling), carry the last known price forward rather than
+            # collapsing this day to cost basis, which paints a false spike.
+            if rate is None and investment.ticker:
+                rate = get_last_known_price(investment.ticker, target_date)
+
             market_value = (holdings * rate if rate else cost_basis) + total_gains
             
             if investment.currency == Currency.USD:
