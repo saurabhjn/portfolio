@@ -1202,15 +1202,33 @@ def retirement_projection():
         usd_ticker_cash_flows.append((datetime.date.today(), total_current_usd_ticker))
     
     us_xirr = calculate_xirr_from_cash_flows(usd_ticker_cash_flows)
-    # Default to 7% if XIRR calculation is not possible
-    us_xirr_dec = (us_xirr / Decimal("100")) if us_xirr is not None else Decimal("0.07")
+    # Pre-Retirement Real Growth default: the portfolio's nominal USD return
+    # (XIRR) minus US inflation, so the "real" label is honest. The 7% fallback
+    # (used when XIRR can't be computed) is already a real figure.
+    US_INFLATION = Decimal("0.025")
+    us_xirr_dec = ((us_xirr / Decimal("100")) - US_INFLATION) if us_xirr is not None else Decimal("0.07")
 
     # Get user inputs from query params with defaults
     pre_growth_param = request.args.get('pre_growth')
     pre_growth = Decimal(pre_growth_param) / 100 if pre_growth_param else us_xirr_dec
     
     post_growth_param = request.args.get('post_growth')
-    post_growth = Decimal(post_growth_param) / 100 if post_growth_param else Decimal("0.065")
+    post_growth = Decimal(post_growth_param) / 100 if post_growth_param else Decimal("0.025")
+
+    # Two-phase retirement growth: aggressive early (on the plan that you go back
+    # to work if markets fall badly), then conservative. early_growth applies for
+    # the first early_years of retirement; post_growth applies after.
+    early_growth_param = request.args.get('early_growth')
+    early_growth = Decimal(early_growth_param) / 100 if early_growth_param else Decimal("0.10")
+    early_until_year_param = request.args.get('early_until_year')
+    early_until_year = int(early_until_year_param) if (early_until_year_param and early_until_year_param.isdigit()) else 2037
+
+    # Medical costs rise faster than general inflation. This is the EXTRA real
+    # growth (over the general rate the rest of the model uses) applied to
+    # medical expenses and the medical corpus. Default 7% ≈ 13% medical − 6% general.
+    medical_growth_param = request.args.get('medical_growth')
+    medical_real_growth = Decimal(medical_growth_param) / 100 if medical_growth_param else Decimal("0.07")
+    medical_growth_monthly = (Decimal("1") + medical_real_growth) ** (Decimal("1") / Decimal("12")) - Decimal("1")
 
     # Whether education expenses should be included in the NPV target.
     # Default: on (checkbox unchecked only when the user explicitly submits "off").
@@ -1263,7 +1281,12 @@ def retirement_projection():
             retirement_yearly_outflow_usd += amt_usd
 
     # --- NPV Based Target Calculation ---
-    projection_months = 50 * 12 # Extend to 50 years (approx age 90-100)
+    # Projection runs from today until the "plan until" year (default 2059).
+    current_year = datetime.date.today().year
+    puy_param = request.args.get('plan_until_year')
+    plan_until_year = int(puy_param) if (puy_param and puy_param.isdigit()) else 2059
+    horizon_years = max(5, min(plan_until_year - current_year, 70))  # clamp to a sane range
+    projection_months = horizon_years * 12
     start_date = datetime.date.today().replace(day=1)
     
     liability_timeline_usd = [Decimal(0)] * projection_months
@@ -1291,6 +1314,10 @@ def retirement_projection():
                 if exp.currency == Currency.INR: amt_usd /= usd_to_inr
                 elif exp.currency == Currency.EUR: amt_usd *= eur_to_usd
                 elif exp.currency == Currency.GBP: amt_usd *= gbp_to_usd
+                # Medical items rise faster than everything else, in real terms.
+                name_l = (exp.name or "").lower()
+                if exp.category == ExpenseCategory.HEALTH or "medical" in name_l or "health" in name_l:
+                    amt_usd *= (Decimal("1") + medical_growth_monthly) ** m_idx
                 liability_timeline_usd[m_idx] += amt_usd
     
     # If no retirement expenses defined, use the placeholder on the timeline for later years
@@ -1307,11 +1334,24 @@ def retirement_projection():
     # Target(m) = Medical + sum_{i=m to End} [ Outflow(i) / (1 + post_growth_monthly)^(i-m) ]
     # Use true CAGR for monthly rate: (1 + r)^(1/12) - 1
     post_growth_monthly = (Decimal("1") + post_growth) ** (Decimal("1") / Decimal("12")) - Decimal("1")
+    early_growth_monthly = (Decimal("1") + early_growth) ** (Decimal("1") / Decimal("12")) - Decimal("1")
+    # Aggressive early phase runs (in absolute time) until early_until_year.
+    early_end_m = max(0, (early_until_year - start_date.year) * 12 - (start_date.month - 1))
     monthly_targets = [Decimal(0)] * projection_months
     for m_idx in range(projection_months):
-        npv = medical_corpus_usd
+        # The medical corpus must keep pace with medical (not just general)
+        # inflation, so it grows in real terms at the medical rate too.
+        npv = medical_corpus_usd * (Decimal("1") + medical_growth_monthly) ** m_idx
+        # The aggressive rate applies until early_end_m (absolute), so how much of
+        # it a candidate retirement at m_idx gets depends on m_idx.
+        early_len = max(0, early_end_m - m_idx)
+        early_factor = (Decimal(1) + early_growth_monthly) ** early_len
         for future_idx in range(m_idx, projection_months):
-            discount_factor = (Decimal(1) + post_growth_monthly)**(future_idx - m_idx)
+            k = future_idx - m_idx  # months into retirement
+            if k <= early_len:
+                discount_factor = (Decimal(1) + early_growth_monthly) ** k
+            else:
+                discount_factor = early_factor * (Decimal(1) + post_growth_monthly) ** (k - early_len)
             npv += liability_timeline_usd[future_idx] / discount_factor
         monthly_targets[m_idx] = npv
 
@@ -1321,8 +1361,17 @@ def retirement_projection():
     start_date = datetime.date.today().replace(day=1)
     yearly_data_map = {}
     active_portfolio = total_current_usd
+    no_drawdown_portfolio = total_current_usd  # corpus value if nothing were ever drawn down
     retirement_date = None
-    
+
+    # The no-drawdown line stops at the year education expenses end.
+    education_end_year = None
+    for e in expenses:
+        if e.category == ExpenseCategory.EDUCATION:
+            y = (e.end_date.year if e.end_date else e.date.year)
+            if education_end_year is None or y > education_end_year:
+                education_end_year = y
+
     # Calculate monthly rates using true CAGR logic
     pre_growth_monthly = (Decimal("1") + pre_growth) ** (Decimal("1") / Decimal("12")) - Decimal("1")
     # post_growth_monthly is already calculated above for NPV
@@ -1346,15 +1395,22 @@ def retirement_projection():
             retirement_date = current_m_date
             is_retired = True
 
-        growth_rate = post_growth_monthly if is_retired else pre_growth_monthly
+        if is_retired:
+            growth_rate = early_growth_monthly if m_idx < early_end_m else post_growth_monthly
+        else:
+            growth_rate = pre_growth_monthly
         growth = active_portfolio * growth_rate
         
         active_portfolio = active_portfolio + growth - effective_monthly_outflow
-        
+        # Same growth path, but never drawn down — the education-period baseline.
+        no_drawdown_portfolio = no_drawdown_portfolio + (no_drawdown_portfolio * growth_rate)
+
         # Aggregate to yearly for the UI
         yearly_data_map[year_val]["portfolio"] = active_portfolio # End of year/latest month balance
         yearly_data_map[year_val]["outflow"] += effective_monthly_outflow
         yearly_data_map[year_val]["can_retire"] = active_portfolio >= monthly_targets[m_idx]
+        if education_end_year is not None and year_val <= education_end_year:
+            yearly_data_map[year_val]["no_drawdown"] = no_drawdown_portfolio
 
     # Convert map to sorted list for template
     yearly_data = []
@@ -1365,7 +1421,8 @@ def retirement_projection():
             "portfolio": data["portfolio"],
             "outflow": data["outflow"],
             "can_retire": data["can_retire"],
-            "required_corpus": data["required_corpus"]
+            "required_corpus": data["required_corpus"],
+            "no_drawdown": data.get("no_drawdown")
         })
 
     retirement_date_str = retirement_date.strftime("%B %Y") if retirement_date else None
@@ -1419,6 +1476,12 @@ def retirement_projection():
         pre_growth=pre_growth,
         post_growth=post_growth,
         us_xirr=us_xirr,
+        us_inflation_pct=US_INFLATION * 100,
+        projection_years=projection_months // 12,
+        plan_until_year=plan_until_year,
+        medical_real_growth_pct=medical_real_growth * 100,
+        early_growth_pct=early_growth * 100,
+        early_until_year=early_until_year,
         Currency=Currency
     )
 
