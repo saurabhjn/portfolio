@@ -72,6 +72,10 @@ investments = []
 transactions_data = {}
 expenses = []
 
+# Signature (mtimes) of the encrypted files last loaded into the globals above,
+# used to re-sync in-memory state with disk on change. See _sync_state_from_disk.
+_state_mtimes = None
+
 def require_unlock(f):
     """Decorator to require data to be unlocked."""
     @wraps(f)
@@ -157,6 +161,38 @@ def save_encrypted_data():
     os.unlink(temp_inv)
     os.unlink(temp_trans)
     os.unlink(temp_exp)
+
+    # A write changes the files; drop the cached signature so the next request
+    # (on any worker) re-reads the fresh data instead of serving a stale copy.
+    global _state_mtimes
+    _state_mtimes = None
+
+
+@app.before_request
+def _sync_state_from_disk():
+    """Keep in-memory globals in sync with the encrypted files on every request.
+
+    The decrypted data is held in module globals loaded at login and mutated in
+    place. With more than one worker each process keeps its own snapshot, so a
+    refresh bounces between divergent copies ("old values come and go") and any
+    restart (e.g. the --reload watcher firing when a save rewrites data/*.enc)
+    wipes the snapshot. Re-reading when the files change keeps every worker in
+    sync and survives restarts. The mtime check keeps the no-change case free:
+    decryption only runs after a write.
+    """
+    global _state_mtimes
+    if request.endpoint == "static":
+        return
+    if not (session.get("unlocked") and session.get("password")):
+        return
+    files = (ENCRYPTED_DATA_FILE, ENCRYPTED_TRANSACTIONS_FILE, ENCRYPTED_EXPENSES_FILE)
+    try:
+        sig = tuple(os.path.getmtime(p) if os.path.exists(p) else None for p in files)
+    except OSError:
+        return
+    if sig != _state_mtimes:
+        if load_encrypted_data(session["password"]):
+            _state_mtimes = sig
 
 
 def _calculate_investment_metrics(
