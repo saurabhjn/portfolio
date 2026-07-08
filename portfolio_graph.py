@@ -361,22 +361,19 @@ def prepare_chart_data(snapshots: List[PortfolioSnapshot], usd_to_inr_rate: Deci
         'no_goog_sale': []
     }
     
-    # Use same historical rate as home page (March 15, 2024)
-    purchase_rate = get_historical_usd_inr_rate(datetime.date(2024, 3, 15))
-    if not purchase_rate:
-        purchase_rate = Decimal('82.83')
-    
     for i, snapshot in enumerate(snapshots):
-        # Use current rate for today, historical for past dates
+        # Use current rate for today, historical for past dates. The same rate
+        # is applied to value, cost basis, and the counterfactual line so the lines
+        # stay FX-consistent and their gap reflects real gains, not FX drift.
         if snapshot.date == datetime.date.today():
             historical_rate = usd_to_inr_rate
         else:
             historical_rate = get_historical_usd_inr_rate(snapshot.date)
             if not historical_rate:
                 historical_rate = usd_to_inr_rate
-        
+
         total_inr = snapshot.total_value_inr + (snapshot.total_value_usd * historical_rate)
-        cost_inr = snapshot.cost_basis_inr + (snapshot.cost_basis_usd * purchase_rate)
+        cost_inr = snapshot.cost_basis_inr + (snapshot.cost_basis_usd * historical_rate)
         no_goog_inr = snapshot.no_goog_sale_inr + (snapshot.no_goog_sale_usd * historical_rate)
         
         chart_data['total_value'].append({
