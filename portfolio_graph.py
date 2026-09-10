@@ -70,17 +70,74 @@ def get_last_known_price(ticker: str, date: datetime.date,
     return None
 
 
+# Full NAV history per scheme code, downloaded once per process and again
+# after MF_HISTORY_MAX_AGE: {scheme_code: (fetched_at, sorted [(date, nav)])}.
+# A None series means the download failed.
+_mf_nav_history: Dict[str, Tuple[datetime.datetime, Optional[List[Tuple[datetime.date, Decimal]]]]] = {}
+MF_HISTORY_MAX_AGE = datetime.timedelta(hours=12)
+
+
+def _load_mf_nav_history(scheme_code: str) -> Optional[List[Tuple[datetime.date, Decimal]]]:
+    """Download the complete NAV series for a scheme code from mfapi.in."""
+    cached = _mf_nav_history.get(scheme_code)
+    if cached and datetime.datetime.now() - cached[0] < MF_HISTORY_MAX_AGE:
+        return cached[1]
+    series = None
+    try:
+        response = requests.get(f"https://api.mfapi.in/mf/{scheme_code}", timeout=20)
+        response.raise_for_status()
+        rows = response.json().get("data") or []
+        parsed = []
+        for entry in rows:
+            try:
+                d = datetime.datetime.strptime(entry["date"], "%d-%m-%Y").date()
+                parsed.append((d, Decimal(str(entry["nav"]))))
+            except (KeyError, ValueError, TypeError):
+                continue
+        if parsed:
+            parsed.sort()
+            series = parsed
+    except Exception:
+        series = None
+    _mf_nav_history[scheme_code] = (datetime.datetime.now(), series)
+    return series
+
+
 def get_historical_nav(ticker: str, date: datetime.date) -> Optional[Decimal]:
-    """Get historical NAV for Indian mutual fund using scheme code."""
-    from api_calls import rate_cache, save_rate_cache, RATE_CACHE_FILE
-    
+    """NAV of an Indian mutual fund (6-digit scheme code) on or before ``date``.
+
+    A cached value comes from rate_cache. On a miss the full NAV series is
+    downloaded once per process and the value is stored in rate_cache in
+    memory; ``flush_rate_cache`` writes the cache to disk.
+    """
+    from api_calls import rate_cache
+
     cache_key = f"HIST_{ticker}_{date.isoformat()}"
-    
+
     if cache_key in rate_cache:
         return rate_cache[cache_key][1]
-    
-    # MFAPI doesn't support historical data, return None
-    return None
+
+    series = _load_mf_nav_history(ticker)
+    if not series:
+        return None
+
+    # Last NAV dated on or before the target date (funds do not publish a
+    # NAV on weekends and holidays).
+    import bisect
+    idx = bisect.bisect_right(series, (date, Decimal("Infinity")))
+    if idx == 0:
+        return None
+    nav_date, nav = series[idx - 1]
+    if (date - nav_date).days > 10:
+        return None
+    rate_cache[cache_key] = (datetime.datetime.now(), nav)
+    return nav
+
+
+def flush_rate_cache() -> None:
+    """Write the in-memory rate cache to disk."""
+    from api_calls import rate_cache, save_rate_cache, RATE_CACHE_FILE
+    save_rate_cache(RATE_CACHE_FILE, rate_cache)
 
 def get_historical_usd_inr_rate(date: datetime.date) -> Optional[Decimal]:
     """Get historical USD to INR rate with caching."""
@@ -375,6 +432,9 @@ def generate_portfolio_timeline(
             no_goog_sale_inr=no_goog_inr
         )
         snapshots.append(snapshot)
+
+    # NAV lookups only update the cache in memory; write it once here.
+    flush_rate_cache()
     
     return snapshots
 
