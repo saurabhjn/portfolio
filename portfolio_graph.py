@@ -107,6 +107,15 @@ def get_historical_usd_inr_rate(date: datetime.date) -> Optional[Decimal]:
         return None
 
 
+def _is_reinvested_dividend(transaction: Transaction) -> bool:
+    """True for a dividend gain entry whose cash became a "Reinvest Shares" lot.
+
+    The lot already holds that money as units valued at market. Counting the
+    gain entry as well counts the dividend twice.
+    """
+    return "reinvest" in (transaction.description or "").lower()
+
+
 def calculate_portfolio_value_on_date(
     investments: List[Investment],
     transactions_data: Dict[str, List[Transaction]],
@@ -160,7 +169,7 @@ def calculate_portfolio_value_on_date(
                     cost_basis -= sale.sell_rate
 
             if transaction.gain_date and transaction.gain_date <= target_date:
-                if transaction.gain_amount:
+                if transaction.gain_amount and not _is_reinvested_dividend(transaction):
                     total_gains += transaction.gain_amount
         
         if holdings > 0 or flat_amount != 0 or total_gains > 0:
