@@ -37,7 +37,9 @@ def get_historical_stock_price(ticker: str, date: datetime.date) -> Optional[Dec
         stock = yf.Ticker(ticker)
         start = date - datetime.timedelta(days=7)
         end = date + datetime.timedelta(days=1)
-        hist = stock.history(start=start, end=end)
+        # auto_adjust=False returns the close of the day. The default
+        # subtracts later dividends from every past price.
+        hist = stock.history(start=start, end=end, auto_adjust=False)
         
         if not hist.empty:
             closest = hist.iloc[-1]['Close']

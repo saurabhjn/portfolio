@@ -64,7 +64,7 @@ def get_current_rate(ticker: str, force_refresh: bool = False) -> Optional[Decim
     else:  # Use yfinance for stocks (US and Indian)
         try:
             stock = yf.Ticker(ticker)
-            hist = stock.history(period="1d")
+            hist = stock.history(period="1d", auto_adjust=False)
             if not hist.empty:
                 return Decimal(str(hist['Close'].iloc[-1]))
         except Exception as e:
@@ -103,7 +103,8 @@ def get_historical_rate(ticker: str, date: datetime.date) -> Optional[Decimal]:
             # Fetch data around the date
             start_date = date - datetime.timedelta(days=7)
             end_date = date + datetime.timedelta(days=1)
-            hist = stock.history(start=start_date.isoformat(), end=end_date.isoformat())
+            # auto_adjust=False returns the close of the day, without later dividends subtracted.
+            hist = stock.history(start=start_date.isoformat(), end=end_date.isoformat(), auto_adjust=False)
             if not hist.empty:
                 # Get the last available close price on or before the date
                 rate = Decimal(str(hist['Close'].iloc[-1]))
