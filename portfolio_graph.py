@@ -131,7 +131,8 @@ def calculate_portfolio_value_on_date(
         transactions = transactions_data.get(investment.investment_name, [])
         
         holdings = Decimal(0)
-        cost_basis = Decimal(0)
+        cost_basis = Decimal(0)   # money in the position at cost (units + flat)
+        flat_amount = Decimal(0)  # quantity-less payments minus quantity-less payouts
         total_gains = Decimal(0)
         
         for transaction in transactions:
@@ -139,18 +140,30 @@ def calculate_portfolio_value_on_date(
                 if transaction.buy_quantity and transaction.buy_rate:
                     holdings += transaction.buy_quantity
                     cost_basis += transaction.buy_quantity * transaction.buy_rate
+                elif transaction.buy_rate:
+                    # A payment that does not carry units (cash balance,
+                    # premium, capital call). The index page treats it the
+                    # same way.
+                    flat_amount += transaction.buy_rate
+                    cost_basis += transaction.buy_rate
 
             for sale in transaction.sales:
-                if sale.sell_date and sale.sell_date <= target_date and sale.sell_quantity:
+                if not (sale.sell_date and sale.sell_date <= target_date):
+                    continue
+                if sale.sell_quantity:
                     holdings -= sale.sell_quantity
                     if transaction.buy_rate:
                         cost_basis -= sale.sell_quantity * transaction.buy_rate
+                elif sale.sell_rate:
+                    # A payout or return of capital that does not carry units.
+                    flat_amount -= sale.sell_rate
+                    cost_basis -= sale.sell_rate
 
             if transaction.gain_date and transaction.gain_date <= target_date:
                 if transaction.gain_amount:
                     total_gains += transaction.gain_amount
         
-        if holdings > 0 or total_gains > 0:
+        if holdings > 0 or flat_amount != 0 or total_gains > 0:
             if is_today:
                 rate = current_rates.get(investment.investment_name)
             elif investment.ticker:
@@ -168,7 +181,10 @@ def calculate_portfolio_value_on_date(
             if rate is None and investment.ticker:
                 rate = get_last_known_price(investment.ticker, target_date)
 
-            market_value = (holdings * rate if rate else cost_basis) + total_gains
+            if rate:
+                market_value = holdings * rate + flat_amount + total_gains
+            else:
+                market_value = cost_basis + total_gains
             
             if investment.currency == Currency.USD:
                 total_usd += market_value
