@@ -262,6 +262,87 @@ def calculate_portfolio_value_on_date(
     return total_usd, total_inr, cost_basis_usd, cost_basis_inr
 
 
+REINVEST_WINDOW_DAYS = 45
+
+
+def _price_on(investment: Investment, date: datetime.date,
+              current_rates: Dict[str, Decimal], is_today: bool) -> Optional[Decimal]:
+    """Price of a ticker investment on ``date`` (today's live rate when is_today)."""
+    if is_today:
+        rate = current_rates.get(investment.investment_name)
+        if rate:
+            return rate
+    if not investment.ticker:
+        return None
+    if investment.ticker.isdigit() and len(investment.ticker) == 6:
+        rate = get_historical_nav(investment.ticker, date)
+    else:
+        rate = get_historical_stock_price(investment.ticker, date)
+    if rate is None:
+        rate = get_last_known_price(investment.ticker, date)
+    return rate
+
+
+def _attribute_sale_proceeds(
+    investments: List[Investment],
+    transactions_data: Dict[str, List[Transaction]],
+    sold_investment: Investment,
+) -> List[dict]:
+    """Where the proceeds of each sale of ``sold_investment`` went.
+
+    Every sale is matched to the ordinary purchases (not dividend
+    reinvestments) of other same-currency ticker investments made within
+    REINVEST_WINDOW_DAYS after the sale, earliest purchase first. Each
+    purchase absorbs proceeds up to its own amount and is funded only once.
+    Proceeds left unmatched count as cash at par.
+
+    Returns one record per sale:
+      {"date", "shares", "proceeds",
+       "legs": [(investment, purchase_date, amount)], "cash"}
+    """
+    buys = []  # [investment, date, amount, remaining]
+    for inv in investments:
+        if inv is sold_investment or not inv.ticker or inv.currency != sold_investment.currency:
+            continue
+        for tx in transactions_data.get(inv.investment_name, []):
+            if not (tx.buy_date and tx.buy_quantity and tx.buy_rate):
+                continue
+            if "reinvest" in (tx.description or "").lower():
+                continue
+            amount = tx.buy_quantity * tx.buy_rate
+            buys.append([inv, tx.buy_date, amount, amount])
+    buys.sort(key=lambda b: b[1])
+
+    sales = []
+    for tx in transactions_data.get(sold_investment.investment_name, []):
+        for sale in tx.sales:
+            if sale.sell_date and sale.sell_quantity and sale.sell_rate:
+                sales.append((sale.sell_date, sale.sell_quantity, sale.sell_quantity * sale.sell_rate))
+    sales.sort()
+
+    records = []
+    for sell_date, shares, proceeds in sales:
+        window_end = sell_date + datetime.timedelta(days=REINVEST_WINDOW_DAYS)
+        candidates = [b for b in buys if sell_date <= b[1] <= window_end and b[3] > 0]
+        legs = []
+        remaining = proceeds
+        for b in candidates:
+            if remaining <= 0:
+                break
+            take = min(b[3], remaining)
+            b[3] -= take
+            remaining -= take
+            legs.append((b[0], b[1], take))
+        records.append({
+            "date": sell_date,
+            "shares": shares,
+            "proceeds": proceeds,
+            "legs": legs,
+            "cash": remaining,
+        })
+    return records
+
+
 def calculate_no_goog_sale_value(
     investments: List[Investment],
     transactions_data: Dict[str, List[Transaction]],
@@ -270,19 +351,26 @@ def calculate_no_goog_sale_value(
     is_today: bool = False,
     actual_usd: Optional[Decimal] = None,
     actual_inr: Optional[Decimal] = None,
+    proceeds_records: Optional[List[dict]] = None,
 ) -> Tuple[Decimal, Decimal]:
     """Portfolio value as if the sold-down holding had never been sold.
 
-    Returns the *full* portfolio value (not a delta) split into (usd, inr):
-    the actual portfolio plus the value of every share of that holding sold on
-    or before ``target_date``, valued at that date's price. When nothing was
-    ever sold — or there is no such position, or no price is available — this
-    equals the actual portfolio value, so the chart line tracks 'Total
-    Portfolio Value' instead of collapsing to zero and then jumping on the
-    first sale.
+    Returns the *full* portfolio value (not a delta) split into (usd, inr).
+    For every sale on or before ``target_date`` the line
+
+      * adds back the sold shares at this date's price, and
+      * removes what the sale proceeds became: the purchases they funded
+        (see ``_attribute_sale_proceeds``), valued at this date's price of
+        the fund bought, plus any unabsorbed proceeds at par.
+
+    The actual portfolio already holds those funded purchases. Without the
+    removal the line counts the same money twice: once as shares and once as
+    the units they bought. When no sale has happened yet, or a price is
+    missing, this equals the actual portfolio value.
 
     ``actual_usd``/``actual_inr`` may be passed in to reuse an already-computed
-    portfolio value for this date and skip a redundant recomputation.
+    portfolio value for this date. ``proceeds_records`` may be passed in to
+    reuse the sale-to-purchase matching across dates.
     """
     if actual_usd is None or actual_inr is None:
         actual_usd, actual_inr, _, _ = calculate_portfolio_value_on_date(
@@ -298,33 +386,32 @@ def calculate_no_goog_sale_value(
     if not goog_investment:
         return actual_usd, actual_inr
 
-    goog_transactions = transactions_data.get(goog_investment.investment_name, [])
+    if proceeds_records is None:
+        proceeds_records = _attribute_sale_proceeds(investments, transactions_data, goog_investment)
 
-    # Shares sold on or before this date (in the same split basis as holdings).
-    sold_shares = Decimal(0)
-    for tx in goog_transactions:
-        for sale in tx.sales:
-            if sale.sell_date and sale.sell_date <= target_date and sale.sell_quantity:
-                sold_shares += sale.sell_quantity
-
-    if sold_shares <= 0:
+    past_sales = [r for r in proceeds_records if r["date"] <= target_date]
+    if not past_sales:
         return actual_usd, actual_inr
 
-    if is_today:
-        goog_rate = current_rates.get(goog_investment.investment_name)
-    elif goog_investment.ticker:
-        goog_rate = get_historical_stock_price(goog_investment.ticker, target_date)
-    else:
-        goog_rate = None
-
+    goog_rate = _price_on(goog_investment, target_date, current_rates, is_today)
     if not goog_rate:
         return actual_usd, actual_inr
 
-    # Add back the sold shares at this date's price, in the holding's own currency.
-    addback = sold_shares * goog_rate
+    adjustment = Decimal(0)
+    for rec in past_sales:
+        adjustment += rec["shares"] * goog_rate
+        adjustment -= rec["cash"]
+        for inv, buy_date, amount in rec["legs"]:
+            price_then = _price_on(inv, buy_date, current_rates, False)
+            price_now = _price_on(inv, target_date, current_rates, is_today)
+            if price_then and price_now:
+                adjustment -= amount * price_now / price_then
+            else:
+                adjustment -= amount
+
     if goog_investment.currency == Currency.USD:
-        return actual_usd + addback, actual_inr
-    return actual_usd, actual_inr + addback
+        return actual_usd + adjustment, actual_inr
+    return actual_usd, actual_inr + adjustment
 
 
 def detect_new_investments(
@@ -402,6 +489,12 @@ def generate_portfolio_timeline(
     
     # Generate snapshots
     snapshots = []
+
+    goog_investment = next((inv for inv in investments if 'GOOG' in inv.investment_name.upper()), None)
+    proceeds_records = (
+        _attribute_sale_proceeds(investments, transactions_data, goog_investment)
+        if goog_investment else []
+    )
     
     for date in sorted_dates:
         is_today = (date == end_date)
@@ -411,7 +504,8 @@ def generate_portfolio_timeline(
         
         no_goog_usd, no_goog_inr = calculate_no_goog_sale_value(
             investments, transactions_data, date, current_rates, is_today,
-            actual_usd=total_usd, actual_inr=total_inr
+            actual_usd=total_usd, actual_inr=total_inr,
+            proceeds_records=proceeds_records,
         )
         
         new_usd, new_inr, is_new_investment, event_desc = detect_new_investments(
